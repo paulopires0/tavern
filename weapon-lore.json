@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Arming sword",
+    "description": "A stout blade favored by men-at-arms of the northern garrison, its hilt wrapped in sharkskin and fitted for both cut and thrust. Forged in batches by the Swardsmith guild of Rothwick, these swords have proven their mettle through three winters of border skirmishes."
+  },
+  {
+    "name": "Bastard Sword",
+    "description": "A soldier's blade, neither here nor there, equally at home in the hand of a foot soldier or lashed across a pack mule. Thousands have been struck from the anvil with no particular mark of craftsmanship, and thousands more will follow."
+  },
+  {
+    "name": "Bastard sword",
+    "description": "The weapon of choice among the mercenary companies that drift through the frontier towns, versatile enough for the mounted charge and the desperate tavern brawl. A smith worth his salt can commission one in a fortnight."
+  },
+  {
+    "name": "Cleaver's Edge",
+    "description": "Heavy and blunt-tipped, the blade of a butcher's son who learned to defend his shop against the ambitious. Its thick edge will not shatter, and those who carry it tend to live long enough to sell it on to someone younger."
+  },
+  {
+    "name": "Crescent Moon Blade",
+    "description": "The curved edge marks it as the work of smiths from the eastern marches, who traded their craft northward over the salt roads. It catches the light in a way that unsettles men who've never seen its like before."
+  },
+  {
+    "name": "Falchion",
+    "description": "A blade as common as bread in any market town—the smith's answer to what a working man needs when trouble comes knocking. It is blunt enough to spare the drawer's wrist, and sharp enough for the one moment it must be sharp."
+  },
+  {
+    "name": "Longsword",
+    "description": "The weapon of the old nobility, long enough to demand respect and thin enough to reward patience. Smiths of renown have stamped their sigils into the crossguard; such blades are buried with their masters as often as they are passed on."
+  },
+  {
+    "name": "Misericorde",
+    "description": "Called the Mercy of Kael, this narrow steel was said to have been thrust through the eye of the great worm beneath Blackwood during the years of ash. Whether the tale is truth or the knife's own appetite for legend, those who have held it speak in whispers of what it seemed to hunger for—and what answered."
+  },
+  {
+    "name": "Rondel Dagger",
+    "description": "The favored steel of men who know their way through the alleys of the great city, where a blade that won't catch on cloth is worth more than gold. Smiths prize the commission, for the work is precise and the pay is sure."
+  },
+  {
+    "name": "Rondel dagger",
+    "description": "A traveler's blade, small enough for the purse and sharp enough for the dark road between villages. Every merchant's son learns to carry one before he learns his letters."
+  },
+  {
+    "name": "Sabre",
+    "description": "The cavalry's choice, a curve that was learned from those who ride the desert's edge. A soldier swears by it, though it is not loved by those who must meet it on foot."
+  },
+  {
+    "name": "Serpent's Tooth",
+    "description": "No blade is better for the quick hand, and no reputation worse for its carrier in the eyes of the lawful. A thief's blade or a fool's pride, depending on who tells the story."
+  },
+  {
+    "name": "Warlord's Bane",
+    "description": "A modest blade owned by modest men, its name a joke told in the barracks—a common soldier's pride in carrying steel that will kill a king the same as a beggar. The irony is worn smooth from many hands."
+  },
+  {
+    "name": "Widow's Fang",
+    "description": "In the hands of the regent's wife during the War of the Three Rivers, this blade turned more fortunes than an army of men. Even now, to carry one is to court the whisper of old stories and older debts."
+  }
+]
