@@ -51,6 +51,7 @@ ensureColumns('connections', {
   x: 'REAL', y: 'REAL', target_x: 'REAL', target_y: 'REAL',
   world_travel: 'INTEGER NOT NULL DEFAULT 0',
 });
+ensureColumns('powers', { circle: 'INTEGER NOT NULL DEFAULT 0' });
 ensureColumns('tracks', { youtube_id: 'TEXT' });
 ensureColumns('annotations', { box_dx: 'REAL', box_dy: 'REAL' });
 if (preV2) {
@@ -197,4 +198,17 @@ export function strokesOf(mapId) {
 
 export function getMap(mapId) {
   return db.prepare('SELECT * FROM maps WHERE id = ?').get(mapId);
+}
+
+// The map as it should LOOK under the current campaign weather: if the weather
+// isn't "normal" and this map has a variant named after it, swap in that
+// variant's image + light; otherwise the map keeps its normal (base) look.
+// One global weather ⇒ every map is coherent; a missing variant falls back.
+export function effectiveMap(map) {
+  if (!map) return map;
+  const weather = getConfig('weather', 'normal');
+  if (!weather || weather === 'normal') return map;
+  const v = db.prepare('SELECT image, visibility FROM map_variants WHERE map_id = ? AND lower(name) = ?')
+    .get(map.id, String(weather).toLowerCase());
+  return v ? { ...map, image: v.image, visibility: v.visibility } : map;
 }

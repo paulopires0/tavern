@@ -264,22 +264,47 @@ function BagTab({ state, act, onDetail }) {
   );
 }
 
+// Players can also craft/find a custom weapon or armor (the catalog picker only
+// offers items & consumables) — with its own stats.
 function CustomItemForm({ act }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('item');
   const [weight, setWeight] = useState(0);
+  const [damage, setDamage] = useState('');
+  const [range, setRange] = useState(1);
+  const [armor, setArmor] = useState(1);
+  const reset = () => { setName(''); setWeight(0); setDamage(''); setRange(1); setArmor(1); };
   return (
-    <div className="row">
-      <input placeholder="What is it?" value={name} onChange={(e) => setName(e.target.value)} />
-      <select value={category} onChange={(e) => setCategory(e.target.value)}>
-        <option value="item">item</option>
-        <option value="consumable">consumable</option>
-      </select>
-      <input type="number" className="num" title="weight each" min="0" value={weight}
-        onChange={(e) => setWeight(e.target.value)} />
+    <div className="stack">
+      <div className="row">
+        <input placeholder="What is it?" value={name} onChange={(e) => setName(e.target.value)} />
+        <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="item">item</option>
+          <option value="consumable">consumable</option>
+          <option value="weapon">weapon</option>
+          <option value="armor">armor</option>
+        </select>
+        <input type="number" className="num" title="weight each" min="0" value={weight}
+          onChange={(e) => setWeight(e.target.value)} />
+      </div>
+      {category === 'weapon' && (
+        <div className="row">
+          <input placeholder="Damage (e.g. 1d6+1)" value={damage} onChange={(e) => setDamage(e.target.value)} />
+          <input type="number" className="num" title="range (m)" min="0" value={range}
+            onChange={(e) => setRange(e.target.value)} />
+        </div>
+      )}
+      {category === 'armor' && (
+        <div className="row">
+          <label className="field"><span>Armor value</span>
+            <input type="number" min="0" value={armor} onChange={(e) => setArmor(e.target.value)} /></label>
+        </div>
+      )}
       <button disabled={!name.trim()} onClick={async () => {
-        if (await act('POST', '/api/player/inventory/custom',
-          { name: name.trim(), category, weight: Number(weight) || 0 })) { setName(''); setWeight(0); }
+        const body = { name: name.trim(), category, weight: Number(weight) || 0 };
+        if (category === 'weapon') { body.damage = damage; body.range = Number(range) || 0; }
+        if (category === 'armor') body.armor = Number(armor) || 0;
+        if (await act('POST', '/api/player/inventory/custom', body)) reset();
       }}>Add</button>
     </div>
   );
@@ -288,28 +313,41 @@ function CustomItemForm({ act }) {
 function PowersTab({ c, act }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [circle, setCircle] = useState(0);
+  // sorted by circle (0 = cantrip/none first), then name
+  const powers = [...c.powers].sort((a, b) => (a.circle - b.circle) || a.name.localeCompare(b.name));
   return (
     <section className="card">
       <h2>Powers</h2>
-      {c.powers.map((p) => (
+      {powers.map((p) => (
         <div className="power" key={p.id}>
           <div className="row spread">
             <strong>{p.name}</strong>
-            <button className="mini danger" onClick={() => act('DELETE', `/api/player/powers/${p.id}`)}>✕</button>
+            <span className="row">
+              <label className="field circle-field"><span>Circle</span>
+                <input type="number" min="0" value={p.circle ?? 0}
+                  onChange={(e) => act('PATCH', `/api/player/powers/${p.id}`, { circle: Number(e.target.value) || 0 })} />
+              </label>
+              <button className="mini danger" onClick={() => act('DELETE', `/api/player/powers/${p.id}`)}>✕</button>
+            </span>
           </div>
           <TextArea rows={2} value={p.description}
             onSave={(v) => act('PATCH', `/api/player/powers/${p.id}`, { description: v })} />
         </div>
       ))}
-      {c.powers.length === 0 && <p className="muted">No powers written down yet.</p>}
+      {powers.length === 0 && <p className="muted">No powers written down yet.</p>}
       <div className="stack">
-        <input placeholder="Power name" value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="row">
+          <input placeholder="Power name" value={name} onChange={(e) => setName(e.target.value)} />
+          <label className="field circle-field"><span>Circle</span>
+            <input type="number" min="0" value={circle} onChange={(e) => setCircle(e.target.value)} /></label>
+        </div>
         <textarea rows={2} placeholder="What it does…" value={description}
           onChange={(e) => setDescription(e.target.value)} />
         <button onClick={async () => {
           if (!name.trim()) return;
-          if (await act('POST', '/api/player/powers', { name: name.trim(), description })) {
-            setName(''); setDescription('');
+          if (await act('POST', '/api/player/powers', { name: name.trim(), description, circle: Number(circle) || 0 })) {
+            setName(''); setDescription(''); setCircle(0);
           }
         }}>Add power</button>
       </div>

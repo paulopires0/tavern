@@ -10,7 +10,7 @@ export const PORT = Number(process.env.PORT || 8030);
 export const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(root, 'data'));
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 export const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'tavern.db');
-export const DM_PASSWORD = process.env.DM_PASSWORD || 'buceta'; // change this! (README)
+export const DM_PASSWORD = process.env.DM_PASSWORD || 'dm1234'; // change this! (README)
 export const CLIENT_DIST = path.join(root, 'client', 'dist');
 
 export const UPLOAD_KINDS = [

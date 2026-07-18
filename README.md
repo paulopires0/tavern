@@ -46,11 +46,12 @@ There is no grid. Maps are the art itself; every distance is real meters:
 - **Visibility (light level)**: per-map multiplier on every character's vision
   radius (1 = daylight, 0.3 = night, 2 = a watchtower). Set the map's normal
   value in the editor; the Live tab has a slider to dim or brighten mid-scene.
-- **Weather**: one map, many looks. Save the current background image +
-  visibility under a name ("Day", "Night", "Snow" — editor, Weather section;
-  upload same-sized images for the variants). Switching weather from the Live
-  tab swaps ONLY the art and the light — walls, doors, chests, tokens and
-  explored fog all stay.
+- **Weather** is campaign-wide (fixed set: normal, day, night, snow). Give a map
+  an alternate image for any weather (editor → Weather looks); a map's own
+  background is its "normal". Pick the weather from the Live tab and every map
+  switches together — a map with no variant for the current weather just shows
+  its normal look. Only the art and the light change; walls, doors, chests,
+  tokens and explored fog all stay.
 - **Tokens follow the zoom** but clamp in screen pixels: zoom far out and a
   token stops shrinking (always findable), zoom far in and it stops growing
   (never swallows the screen); in between it is true to its world size.

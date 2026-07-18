@@ -24,7 +24,7 @@ import { weaponGen, armorGen, validateGen } from './generation.js';
 import {
   defaultCapacity, shopBuyPrice,
   SHOP_DISAPPEAR_CHANCE, RARITY_WEIGHTS, rarityOf, VISION_METERS_DEFAULT,
-  ITEM_CATEGORIES, MEASURES, SELLER_TYPES, TRIGGER_RADIUS_METERS,
+  ITEM_CATEGORIES, MEASURES, SELLER_TYPES, TRIGGER_RADIUS_METERS, DOOR_TRIGGER_METERS, WEATHERS,
   rollWeapon, rollArmor, pickByRank,
   TOKEN_METERS, TOKEN_MIN_PX, TOKEN_MAX_FRACTION,
 } from '../shared/gameRules.js';
@@ -349,34 +349,46 @@ dmRouter.patch('/maps/:id', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Weather variants: named {image, visibility} snapshots of one map. Applying
-// one swaps ONLY the look and the light — strokes, doors, chests, tokens and
-// explored fog all stay. Variant images should match the map's dimensions.
+// Weather variants: a map's alternate {image, visibility} for a named weather
+// (night, snow…). The map's OWN image is its "normal". Variants never mutate
+// the base — the look is chosen at render time from the global weather.
 // ---------------------------------------------------------------------------
 dmRouter.post('/maps/:id/variants', (req, res) => {
   const map = getMap(Number(req.params.id));
   if (!map) return bad(res, 'no such map');
+  const name = String(req.body?.name || '').toLowerCase();
+  if (!WEATHERS.includes(name) || name === 'normal') {
+    return bad(res, `weather must be one of: ${WEATHERS.filter((w) => w !== 'normal').join(', ')}`);
+  }
   const b = req.body || {};
-  if (!b.name) return bad(res, 'name required');
-  const info = db.prepare(
-    'INSERT INTO map_variants (map_id, name, image, visibility) VALUES (?,?,?,?)'
-  ).run(map.id, String(b.name), 'image' in b ? b.image : map.image,
-    b.visibility != null ? Number(b.visibility) : map.visibility);
+  const image = 'image' in b ? b.image : map.image;
+  const visibility = b.visibility != null ? Number(b.visibility) : map.visibility;
+  // one variant per (map, weather): replace if it already exists
+  const existing = db.prepare('SELECT id FROM map_variants WHERE map_id = ? AND lower(name) = ?').get(map.id, name);
+  if (existing) {
+    db.prepare('UPDATE map_variants SET image = ?, visibility = ? WHERE id = ?').run(image, visibility, existing.id);
+    return ok(res, { id: existing.id });
+  }
+  const info = db.prepare('INSERT INTO map_variants (map_id, name, image, visibility) VALUES (?,?,?,?)')
+    .run(map.id, name, image, visibility);
   ok(res, { id: info.lastInsertRowid });
-});
-
-dmRouter.post('/map-variants/:id/apply', (req, res) => {
-  const v = db.prepare('SELECT * FROM map_variants WHERE id = ?').get(Number(req.params.id));
-  if (!v) return bad(res, 'no such variant');
-  refreshFogForMap(v.map_id); // bank what was in sight under the old light
-  db.prepare('UPDATE maps SET image = ?, visibility = ? WHERE id = ?')
-    .run(v.image, v.visibility, v.map_id);
-  refreshFogForMap(v.map_id); // dawn breaking uncovers what is now in sight
-  ok(res);
 });
 
 dmRouter.delete('/map-variants/:id', (req, res) => {
   db.prepare('DELETE FROM map_variants WHERE id = ?').run(Number(req.params.id));
+  ok(res);
+});
+
+// Set the campaign-wide weather. Every map re-renders with its matching variant
+// (or its normal look if it has none), so the world stays coherent.
+dmRouter.post('/weather', (req, res) => {
+  const weather = String(req.body?.weather || 'normal').toLowerCase();
+  if (!WEATHERS.includes(weather)) return bad(res, `unknown weather "${weather}"`);
+  const withParty = db.prepare('SELECT DISTINCT map_id AS id FROM characters WHERE map_id IS NOT NULL').all();
+  for (const m of withParty) refreshFogForMap(m.id);  // bank what's in sight under the OLD light
+  setConfig('weather', weather);
+  for (const m of withParty) refreshFogForMap(m.id);  // …then uncover what the NEW light reveals
+  retargetTVs(getIO());
   ok(res);
 });
 
@@ -681,7 +693,7 @@ function applyMove({ kind, id, mapId, x, y }, { triggers = true } = {}) {
     teleport = !path;
   }
 
-  const trigPx = TRIGGER_RADIUS_METERS * map.scale;
+  const trigPx = DOOR_TRIGGER_METERS * map.scale;
   let finalMap = map, finalX = x, finalY = y, result = 'moved';
   const door = nearby('connections', map.id, x, y, trigPx);
   if (door) {
@@ -749,7 +761,7 @@ dmRouter.post('/move-tokens', (req, res) => {
 
   if (anchor) {
     const map = getGridMap(Number(anchor.mapId));
-    const door = map && nearby('connections', map.id, anchor.x, anchor.y, TRIGGER_RADIUS_METERS * map.scale);
+    const door = map && nearby('connections', map.id, anchor.x, anchor.y, DOOR_TRIGGER_METERS * map.scale);
     if (door) {
       const target = getGridMap(door.target_map_id);
       const sourceMap = target ? getMap(map.id) : null;

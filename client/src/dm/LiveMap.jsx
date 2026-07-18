@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import MapCanvas from '../MapCanvas.jsx';
 import ChestDialog from './ChestDialog.jsx';
 import TradeDialog from './TradeDialog.jsx';
@@ -6,6 +6,7 @@ import MapGraph from './MapGraph.jsx';
 import { upload } from '../api.js';
 import { NumField } from '../fields.jsx';
 import { CropInput } from '../ImageCropper.jsx';
+import { WEATHERS } from '../../../shared/gameRules.js';
 
 // The DM's table: drag tokens (shift-click selects several and they move
 // together), walls/cliffs enforce themselves, doors teleport, weapon ranges
@@ -23,6 +24,20 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
   const worldMapObj = global.maps.find((m) => m.is_world);
 
   useEffect(() => { setTravelPath(null); }, [viewMapId]); // don't carry a half-drawn route between maps
+
+  // When a kingdom JOURNEY (flagged door) finishes, follow the party to the
+  // destination city here in Live too — the TV already switched.
+  const arriveRef = useRef(null);
+  useEffect(() => {
+    const wt = global.worldTravel;
+    if (wt) { arriveRef.current = wt.arriveMapId ?? arriveRef.current; }
+    else if (arriveRef.current != null) {
+      const dest = arriveRef.current;
+      arriveRef.current = null;
+      setSelected(new Set());
+      setViewMapId(dest);
+    }
+  }, [global.worldTravel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Maps reachable from the current one through a door (either direction), plus
   // the one you're viewing and whatever is on the TV — so you can always get back.
@@ -165,7 +180,6 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
 
   const offMapChars = global.characters.filter((c) => c.map_id !== viewMapId);
   const mapTracks = global.tracks.filter((t) => t.map_id === viewMapId);
-  const weathers = (global.mapVariants || []).filter((v) => v.map_id === viewMapId);
   const music = global.music;
 
   return (
@@ -242,13 +256,13 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
               )}
             </div>
           )}
-          {map && !isWorld && weathers.length > 0 && (
-            <div className="chips">
-              {weathers.map((v) => (
-                <button key={v.id} title="Swap the map's look and light — everything else stays"
-                  className={`chip ${map.image === v.image && map.visibility === v.visibility ? 'active' : ''}`}
-                  onClick={() => act('POST', `/api/dm/map-variants/${v.id}/apply`)}>
-                  {v.name}
+          {map && (
+            <div className="chips" title="Campaign-wide weather — every map uses its matching look, or its normal one">
+              {WEATHERS.map((w) => (
+                <button key={w}
+                  className={`chip ${(global.weather || 'normal') === w ? 'active' : ''}`}
+                  onClick={() => act('POST', '/api/dm/weather', { weather: w })}>
+                  {w}
                 </button>
               ))}
             </div>

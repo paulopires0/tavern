@@ -68,21 +68,29 @@ playerRouter.post('/inventory/add', (req, res) => {
   ok(res);
 });
 
-// A player invents something they picked up: a custom item/consumable created
-// on the fly and dropped straight into their own bag. Reused by name so the
-// catalog doesn't fill with duplicates.
+// A player invents something they picked up or crafted: a custom item created
+// on the fly and dropped straight into their bag. Unlike the catalog picker
+// (items/consumables only), a custom piece may be a weapon or armor with its own
+// stats. Reused by name+category so the catalog doesn't fill with duplicates.
+const CUSTOM_CATEGORIES = ['item', 'consumable', 'weapon', 'armor'];
 playerRouter.post('/inventory/custom', (req, res) => {
-  const name = String(req.body?.name || '').trim();
+  const b = req.body || {};
+  const name = String(b.name || '').trim();
   if (!name) return res.status(400).json({ error: 'name required' });
-  const category = req.body?.category === 'consumable' ? 'consumable' : 'item';
-  const weight = Math.max(0, Number(req.body?.weight) || 0);
-  const quantity = Math.max(1, Number(req.body?.quantity) || 1);
+  const category = CUSTOM_CATEGORIES.includes(b.category) ? b.category : 'item';
+  const weight = Math.max(0, Number(b.weight) || 0);
+  const quantity = Math.max(1, Number(b.quantity) || 1);
+  const damage = category === 'weapon' ? (b.damage || null) : null;
+  const range = category === 'weapon' && b.range != null ? Number(b.range) : null;
+  const armor = category === 'armor' && b.armor != null ? Number(b.armor) : null;
   let item = db.prepare(
     "SELECT id FROM items WHERE lower(name) = lower(?) AND category = ? AND tags LIKE '%custom%'"
   ).get(name, category);
   if (!item) {
-    const info = db.prepare(`INSERT INTO items (name, description, category, measure, weight, value, tags)
-      VALUES (?,?,?,?,?,?,?)`).run(name, '', category, 'unit', weight, 0, JSON.stringify(['custom']));
+    const info = db.prepare(`INSERT INTO items
+      (name, description, category, measure, weight, value, damage, range, armor, tags)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(name, '', category, 'unit', weight, 0, damage, range, armor, JSON.stringify(['custom']));
     item = { id: info.lastInsertRowid };
   }
   addToInventory('character', req.characterId, item.id, quantity);
@@ -102,12 +110,12 @@ playerRouter.post('/inventory/remove', (req, res) => {
   ok(res);
 });
 
-// --- powers --------------------------------------------------------------------
+// --- powers ("circle" = the spell's level/tier) --------------------------------
 playerRouter.post('/powers', (req, res) => {
-  const { name, description = '' } = req.body || {};
+  const { name, description = '', circle = 0 } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
-  const info = db.prepare('INSERT INTO powers (character_id, name, description) VALUES (?,?,?)')
-    .run(req.characterId, name, description);
+  const info = db.prepare('INSERT INTO powers (character_id, name, description, circle) VALUES (?,?,?,?)')
+    .run(req.characterId, name, description, Math.max(0, Math.round(Number(circle) || 0)));
   ok(res, { id: info.lastInsertRowid });
 });
 
@@ -116,8 +124,9 @@ playerRouter.patch('/powers/:id', (req, res) => {
     .get(Number(req.params.id), req.characterId);
   if (!row) return res.status(400).json({ error: 'no such power' });
   const b = req.body || {};
-  db.prepare('UPDATE powers SET name = ?, description = ? WHERE id = ?')
-    .run(b.name ?? row.name, b.description ?? row.description, row.id);
+  db.prepare('UPDATE powers SET name = ?, description = ?, circle = ? WHERE id = ?')
+    .run(b.name ?? row.name, b.description ?? row.description,
+      'circle' in b ? Math.max(0, Math.round(Number(b.circle) || 0)) : row.circle, row.id);
   ok(res);
 });
 

@@ -37,8 +37,15 @@ export const TOKEN_MAX_FRACTION = 0.18;      // server-side cap: fraction of map
 // Map ICONS (doors, chests, shops) are NOT world-sized: they render at a fixed
 // ICON_PX (image pixels) × the map's icon_scale (editor), on every map.
 export const ICON_PX = 46;
-// How close (meters) a dropped token must land to a door/chest/shop to trigger it.
+// How close (meters) a dropped token must land to a chest/shop to trigger it.
 export const TRIGGER_RADIUS_METERS = 1.2;
+// Doors are smaller targets — you must land closer to actually step through.
+export const DOOR_TRIGGER_METERS = 0.6;
+
+// Weather is a CAMPAIGN-WIDE state, not per-map: pick one and every map shows
+// its matching variant, or falls back to its normal (base) look. Fixed set so
+// "night" means the same everywhere.
+export const WEATHERS = ['normal', 'day', 'night', 'snow'];
 // Kingdom/world map: entering a located map permanently uncovers a circle of
 // this radius (meters, at the WORLD map's scale) around its marker.
 export const WORLD_REVEAL_METERS = 60;

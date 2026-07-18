@@ -2,7 +2,7 @@
 // (FOG_CELL_METERS per cell — never rendered as a grid). This decorates a map
 // row with the cell geometry clients and fog code share.
 import { FOG_CELL_METERS } from '../shared/gameRules.js';
-import { getMap } from './db.js';
+import { getMap, effectiveMap } from './db.js';
 
 export function decorateGrid(map) {
   if (!map) return null;
@@ -19,7 +19,7 @@ export function decorateGrid(map) {
 }
 
 export function getGridMap(mapId) {
-  return decorateGrid(getMap(mapId));
+  return decorateGrid(effectiveMap(getMap(mapId)));
 }
 
 export const cellKey = (cx, cy) => `${cx},${cy}`;

@@ -221,39 +221,40 @@ test('e2e', async (t) => {
     assert.equal(push.fogGrid['5,30'], 2, 'live vision kept');
   });
 
-  await t.test('visibility scales vision; weather variants swap look and light', async () => {
+  await t.test('weather is global & coherent: variant swaps look+light, else normal', async () => {
     const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
     cleanup.push(tv);
     let push = await tv.latest('state:map');
-    // hero at (100,600), vision 15 m = 300 px at visibility 1
-    assert.equal(push.fogGrid['12,30'], 2, 'cell 150 px away is observed in daylight');
+    assert.equal(push.fogGrid['12,30'], 2, 'a far cell is observed in daylight (normal weather)');
+    const baseImage = (await connectAsDmMap(mapA)).map.image;
 
-    // capture the current look as "Day", then let a moonless night fall
-    const day = await api('POST', `/api/dm/maps/${mapA}/variants`, { name: 'Day' });
-    await api('PATCH', `/api/dm/maps/${mapA}`, { visibility: 0.05 });
-    push = await tv.latest('state:map');
-    assert.equal(push.fogGrid['12,30'], 1, 'beyond the dimmed radius: remembered, not observed');
-    assert.equal(push.fogGrid['5,30'], 2, 'own spot is still observed in the dark');
-
-    // "Night" snapshots the dark visibility together with its own image
+    // variant names must be a known weather
+    assert.equal((await api('POST', `/api/dm/maps/${mapA}/variants`, { name: 'foggy' })).status, 400, 'unknown weather rejected');
     const night = await api('POST', `/api/dm/maps/${mapA}/variants`,
-      { name: 'Night', image: '/uploads/maps/night.png' });
+      { name: 'Night', image: '/uploads/maps/night.png', visibility: 0.05 });
+    assert.equal(night.ok, true);
 
-    await api('POST', `/api/dm/map-variants/${day.id}/apply`);
+    // night falls campaign-wide
+    assert.equal((await api('POST', '/api/dm/weather', { weather: 'night' })).ok, true);
     let dmMap = await connectAsDmMap(mapA);
-    assert.equal(dmMap.map.visibility, 1, 'Day restores full light');
+    assert.equal(dmMap.map.image, '/uploads/maps/night.png', 'night swaps mapA art');
+    assert.equal(dmMap.map.visibility, 0.05, '…and dims the light');
+    assert.ok(dmMap.strokes.length > 0, 'painted physics survive the weather');
+    push = await tv.latest('state:map');
+    assert.equal(push.fogGrid['12,30'], 1, 'night shrinks vision: the far cell is only remembered');
+    assert.equal(push.fogGrid['5,30'], 2, 'the party still sees its own spot');
+
+    // mapB has NO night variant → it stays on its normal look (coherent fallback)
+    assert.equal((await connectAsDmMap(mapB)).map.visibility, 1, 'a map without a night variant keeps normal');
+
+    // back to normal restores mapA's base look
+    await api('POST', '/api/dm/weather', { weather: 'normal' });
+    dmMap = await connectAsDmMap(mapA);
+    assert.equal(dmMap.map.image, baseImage, 'normal restores the base image');
+    assert.equal(dmMap.map.visibility, 1, 'and full light');
     push = await tv.latest('state:map');
     assert.equal(push.fogGrid['12,30'], 2, 'daylight again');
 
-    await api('POST', `/api/dm/map-variants/${night.id}/apply`);
-    dmMap = await connectAsDmMap(mapA);
-    assert.equal(dmMap.map.image, '/uploads/maps/night.png', 'Night swaps the art');
-    assert.equal(dmMap.map.visibility, 0.05, '…and the light');
-    assert.ok(dmMap.strokes.length > 0, 'painted physics survive the weather');
-
-    // back to day for the rest of the suite
-    await api('POST', `/api/dm/map-variants/${day.id}/apply`);
-    await api('DELETE', `/api/dm/map-variants/${day.id}`);
     await api('DELETE', `/api/dm/map-variants/${night.id}`);
   });
 
@@ -571,7 +572,7 @@ test('e2e', async (t) => {
     const p = (method, url, body) => api(method, url, body, login.token);
 
     assert.equal((await p('PATCH', '/api/player/me', { hp: 7, armor: 2, token_scale: 1.8 })).ok, true);
-    const power = await p('POST', '/api/player/powers', { name: 'Second wind', description: 'Once per day.' });
+    const power = await p('POST', '/api/player/powers', { name: 'Second wind', description: 'Once per day.', circle: 2 });
     assert.equal(power.ok, true);
     await p('POST', '/api/player/diary', { title: 'Day 1', body: 'Found a crypt.' });
 
@@ -585,7 +586,7 @@ test('e2e', async (t) => {
     const st = await ps.next('state');
     assert.equal(st.character.hp, 7);
     assert.equal(st.character.token_scale, 1.8);
-    assert.ok(st.character.powers.some((pw) => pw.name === 'Second wind'));
+    assert.ok(st.character.powers.some((pw) => pw.name === 'Second wind' && pw.circle === 2), 'powers carry a circle');
     assert.ok(st.diary.some((d) => d.title === 'Day 1'));
   });
 
@@ -619,6 +620,13 @@ test('e2e', async (t) => {
     // …and it's tagged 'custom' so the phone's pick-list can hide it
     const custom = pst.items.find((i) => i.name === 'Lucky pebble');
     assert.ok(custom && custom.tags.includes('custom'), 'custom items are tagged for the picker to hide');
+
+    // a player may craft a CUSTOM weapon (the catalog picker can't add weapons)
+    assert.equal((await p('/api/player/inventory/custom',
+      { name: 'Whittled spear', category: 'weapon', damage: '1d6', range: 2, weight: 2 })).ok, true);
+    const pst2 = await (await (async () => { const s = await connectSocket({ token: login.token }); cleanup.push(s); return s; })()).next('state');
+    const spear = pst2.character.inventory.find((e) => e.name === 'Whittled spear');
+    assert.ok(spear && spear.category === 'weapon' && spear.damage === '1d6', 'custom weapon has its stats');
 
     // dropping logs a negative delta
     const entry = pst.character.inventory.find((e) => e.id === torch);

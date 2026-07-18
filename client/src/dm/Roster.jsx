@@ -80,7 +80,7 @@ export default function Roster({ global, act }) {
                   <h4>Powers <span className="muted small">(written by the player)</span></h4>
                   <ul className="inv-list">
                     {c.powers.map((p) => (
-                      <li key={p.id}><span><strong>{p.name}</strong> <span className="muted small">{p.description}</span></span></li>
+                      <li key={p.id}><span>{p.circle > 0 && <span className="cat-badge inline">circle {p.circle}</span>} <strong>{p.name}</strong> <span className="muted small">{p.description}</span></span></li>
                     ))}
                   </ul>
                 </>

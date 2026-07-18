@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS powers (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   character_id INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
   name         TEXT NOT NULL,
-  description  TEXT NOT NULL DEFAULT ''
+  description  TEXT NOT NULL DEFAULT '',
+  circle       INTEGER NOT NULL DEFAULT 0  -- "circle" = spell level/tier (0 = none)
 );
 
 -- Diaries: character_id NULL = the Dungeon Master's own diary.

@@ -3,6 +3,7 @@ import MapCanvas from '../MapCanvas.jsx';
 import { upload } from '../api.js';
 import { NumField } from '../fields.jsx';
 import { pointSegDist, strokeSegments } from '../../../shared/geometry.js';
+import { WEATHERS } from '../../../shared/gameRules.js';
 
 const KINDS = [
   ['wall', 'Wall — blocks movement and sight'],
@@ -290,33 +291,32 @@ export default function MapEditor({ global, detail, viewMapId, setViewMapId, act
                 </select>
               </label>
 
-              <h4>Weather</h4>
-              <p className="muted small">Named looks (day, night, snow…) for this map — only the image and light change.</p>
-              {(global.mapVariants || []).filter((v) => v.map_id === map.id).map((v) => (
-                <div className="row" key={v.id}>
-                  <span className={map.image === v.image && map.visibility === v.visibility ? '' : 'muted'}>
-                    {v.name} <span className="muted small">(visibility ×{v.visibility})</span>
-                  </span>
-                  <span className="spacer" />
-                  <button className="mini" onClick={() => act('POST', `/api/dm/map-variants/${v.id}/apply`)}>Use</button>
-                  <button className="mini danger" onClick={() => act('DELETE', `/api/dm/map-variants/${v.id}`)}>del</button>
-                </div>
-              ))}
-              <div className="row">
-                <button onClick={() => {
-                  const name = window.prompt('Save the current image + visibility as weather named:', 'Day');
-                  if (name?.trim()) act('POST', `/api/dm/maps/${map.id}/variants`, { name: name.trim() });
-                }}>Save current look as weather…</button>
-                <label className="field"><span>New weather from image</span>
-                  <input type="file" accept="image/*" onChange={async (e) => {
-                    const f = e.target.files[0];
-                    if (!f) return;
-                    const name = window.prompt('Name for this weather (its image is the file you picked):', 'Night');
-                    if (!name?.trim()) return;
-                    const { path } = await uploadMapImage(f);
-                    act('POST', `/api/dm/maps/${map.id}/variants`, { name: name.trim(), image: path });
-                  }} /></label>
-              </div>
+              <h4>Weather looks</h4>
+              <p className="muted small">
+                This map's <strong>normal</strong> look is its background above. Give it an alternate
+                image for any weather; the whole campaign switches weather together (Live tab), and a
+                map with no variant for the current weather just shows its normal look.
+              </p>
+              {WEATHERS.filter((w) => w !== 'normal').map((w) => {
+                const v = (global.mapVariants || []).find((x) => x.map_id === map.id && x.name === w);
+                return (
+                  <div className="row" key={w}>
+                    <span style={{ width: 56, textTransform: 'capitalize' }}>{w}</span>
+                    <span className="muted small">{v ? `set · vis ×${v.visibility}` : 'normal (no variant)'}</span>
+                    <span className="spacer" />
+                    <label className="buttonish mini" style={{ cursor: 'pointer' }}>
+                      {v ? 'Replace' : 'Set image'}
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+                        const f = e.target.files[0];
+                        if (!f) return;
+                        const { path } = await uploadMapImage(f);
+                        act('POST', `/api/dm/maps/${map.id}/variants`, { name: w, image: path, visibility: map.visibility });
+                      }} />
+                    </label>
+                    {v && <button className="mini danger" onClick={() => act('DELETE', `/api/dm/map-variants/${v.id}`)}>del</button>}
+                  </div>
+                );
+              })}
               <button className="danger" onClick={() => {
                 if (confirm(`Delete map "${map.name}" and everything on it?`)) {
                   act('DELETE', `/api/dm/maps/${map.id}`);

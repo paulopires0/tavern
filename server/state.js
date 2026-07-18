@@ -60,6 +60,7 @@ function dmGlobal() {
     shopDay: getConfig('shop_day'),
     maps: mapsList(),
     mapVariants: db.prepare('SELECT * FROM map_variants ORDER BY map_id, name').all(),
+    weather: getConfig('weather', 'normal'),
     // the door graph: which maps connect to which (for the Live map picker),
     // plus which links demand a kingdom journey
     mapLinks: db.prepare('SELECT map_id, target_map_id, world_travel FROM connections').all(),
