@@ -1,8 +1,6 @@
 # Tavern — tabletop campaign companion
 
-*A 99.9999% vibe coded (I did write the prompts :D) interface for DND campaigns.*
-
-A self-hosted web app for running a homebrew medieval campaign in person:
+A 99.9999% vibe coded (I did write the prompts :D) self-hosted web app for running a homebrew medieval campaign in person:
 
 - **Player view** (phones) — each player logs in with their character name + password and runs their own sheet like paper: HP, gold, armor, stats, bag, powers and a personal diary are all self-editable, live-synced. Players upload their own **art** (sheet picture) and **map token** (the PNG that walks the map).
 - **Party / TV view** (shared screen) — the active map in an ornamented frame with fog of war, image tokens, zoom controls, DM-pushed picture overlays (found letters, NPC faces) and the campaign music. No login: unguessable spectator link.
