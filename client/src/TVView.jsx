@@ -115,17 +115,24 @@ export default function TVView({ tvKey }) {
     }
   }, [sfx?.nonce, audioReady]);
 
-  // Kingdom "simulate travel": a marker walks the DM's drawn path once. The fog
-  // was already revealed server-side; this is the animation.
+  // A kingdom journey walks a marker along its road ONCE. Picking the cue up and
+  // dropping it again are deliberately separate effects: the drop used to live
+  // in this one, and its cleanup fired the moment the server cleared the cue —
+  // cancelling the drop, so the marker stayed and re-walked on every later view.
   const worldTravel = global?.worldTravel;
   useEffect(() => {
     if (!worldTravel?.nonce || worldTravel.nonce === lastTravelNonce.current) return;
     lastTravelNonce.current = worldTravel.nonce; // consumed, whether or not we play it
-    if (!journeyIsLive(worldTravel)) return;     // stale cue (reload after the trip)
-    setTravel(worldTravel);
-    const t = setTimeout(() => setTravel(null), (worldTravel.durationMs || 2600) + 1500);
-    return () => clearTimeout(t);
+    if (journeyIsLive(worldTravel)) setTravel(worldTravel); // ignore a stale cue
   }, [worldTravel?.nonce]);
+
+  // …and the marker always goes away when its walk is over.
+  useEffect(() => {
+    if (!travel) return undefined;
+    const left = (travel.durationMs || 2600) + 1500 - (Date.now() - travel.nonce);
+    const t = setTimeout(() => setTravel(null), Math.max(0, left));
+    return () => clearTimeout(t);
+  }, [travel]);
 
   // The frame includes the travel path so it grows to the whole journey BEFORE
   // the marker starts walking.
@@ -143,7 +150,7 @@ export default function TVView({ tvKey }) {
 
   // While a kingdom journey plays, the map shows ONLY the walking party marker
   // (the derived "you are here" dots are hidden until they arrive).
-  const journeying = travel?.path?.length >= 2 && mapDetail.map.is_world;
+  const journeying = mapDetail.map.is_world && journeyIsLive(travel);
   const tokens = journeying ? [] : (mapDetail.characters || []).map((c) => ({
     tokenKey: `c${c.id}`, kind: 'character', id: c.id, x: c.x, y: c.y,
     color: c.token_color, label: c.name, icon: c.token, scale: c.token_scale,
