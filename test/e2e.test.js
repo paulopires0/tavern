@@ -12,7 +12,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tavern-test-'));
 process.env.DM_PASSWORD = 'test-dm-pw';
 
 const { createServer } = await import('../server/app.js');
-const { getConfig } = await import('../server/db.js');
+const { getConfig, setConfig } = await import('../server/db.js');
 const { io: ioc } = await import('socket.io-client');
 
 const { server } = createServer();
@@ -517,6 +517,22 @@ test('e2e', async (t) => {
     await api('POST', '/api/dm/config', { weaponGen: null }); // back to defaults
     st = await (await pushedDm()).next('state');
     assert.equal(st.weaponGen.bonusMax, 3, 'cleared back to the built-in default');
+  });
+
+  await t.test('a finished journey cue is never handed out again', async () => {
+    // a cue left in config from a trip that already ended (arrival timer lost to
+    // a restart, or the manual simulate-travel) must not reach ANY client —
+    // otherwise re-showing the kingdom map replays the walk, every single time
+    setConfig('world_travel', { path: [[0, 0], [200, 200]], nonce: Date.now() - 60000, durationMs: 3000 });
+    const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
+    cleanup.push(tv);
+    assert.equal((await tv.next('state')).worldTravel, null, 'the TV gets no stale cue');
+    assert.equal((await (await pushedDm()).next('state')).worldTravel, null, 'nor does the DM');
+
+    // …while a cue that is still running is delivered normally
+    setConfig('world_travel', { path: [[0, 0], [200, 200]], nonce: Date.now(), durationMs: 5000 });
+    assert.ok((await (await pushedDm()).next('state')).worldTravel?.nonce, 'a running journey still plays');
+    setConfig('world_travel', null);
   });
 
   await t.test('several TVs share one link', async () => {

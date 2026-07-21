@@ -22,6 +22,17 @@ export function getIO() { return io; }
 
 // ---------- global payloads ----------
 
+// A kingdom-journey cue is a ONE-SHOT. It stays in config until its arrival
+// timer clears it, but a cue whose walk is already over must never reach a
+// client — otherwise re-showing the kingdom map replays the whole trip (and it
+// would replay again on every revisit). Filtering here means even a browser
+// running an older bundle can't animate a finished journey.
+function liveWorldTravel() {
+  const cue = getConfig('world_travel', null);
+  if (!cue?.nonce || !Array.isArray(cue.path) || cue.path.length < 2) return null;
+  return Date.now() - cue.nonce < (cue.durationMs || 2600) + 1500 ? cue : null;
+}
+
 function musicState() {
   const music = getConfig('music');
   const track = music.trackId
@@ -64,7 +75,7 @@ function dmGlobal() {
     // the door graph: which maps connect to which (for the Live map picker),
     // plus which links demand a kingdom journey
     mapLinks: db.prepare('SELECT map_id, target_map_id, world_travel FROM connections').all(),
-    worldTravel: getConfig('world_travel', null), // active kingdom journey, if any (DM can watch)
+    worldTravel: liveWorldTravel(), // only while the walk is actually running
     characters,
     items: db.prepare('SELECT * FROM items ORDER BY name').all().map(parseItem),
     shops: db.prepare('SELECT * FROM shops ORDER BY name').all(),
@@ -90,7 +101,7 @@ function tvGlobal() {
     activeMapId: getConfig('active_map_id', null),
     tvOverlay: getConfig('tv_overlay', null),
     sfx: getConfig('sfx', null), // {url, name, nonce} — TV plays it once per nonce
-    worldTravel: getConfig('world_travel', null), // {path, nonce} — kingdom walk animation
+    worldTravel: liveWorldTravel(), // {path, nonce, durationMs} — only while it is running
     music: musicState(), // TV is the audio output device, audio only (README)
   };
 }
