@@ -34,6 +34,35 @@ const STROKE_STYLE = {
   cliff: { stroke: '#e0a050', opacity: 0.85, dash: null },
 };
 
+// Bake a vector map into a bitmap ONCE, at up to 2× its nominal size but never
+// more than MAX_RASTER_PX in total (a 4000×4000 map bakes 1:1; a small one gets
+// extra detail for zooming). After this it behaves exactly like a PNG map: pan
+// and zoom are bitmap blits instead of re-drawing every path each frame.
+const MAX_RASTER_PX = 16e6;
+function rasterizeSvg(src, w, h) {
+  const k = Math.min(2, Math.sqrt(MAX_RASTER_PX / Math.max(1, w * h)));
+  const tw = Math.max(1, Math.round(w * k));
+  const th = Math.max(1, Math.round(h * k));
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = tw;
+        canvas.height = th;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, tw, th);
+        canvas.toBlob((b) => resolve(b ? URL.createObjectURL(b) : null), 'image/png');
+      } catch {
+        resolve(null); // fall back to no background rather than break the map
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
 export default function MapCanvas({
   map, strokes = [], fogGrid = null, tokens = [], objects = [], rings = [],
   notes = [], guide = null, frameBox = null, selectedKeys = null, paint = null,
@@ -175,6 +204,38 @@ export default function MapCanvas({
     () => strokes.map((st) => renderStroke(st, `s${st.id}`)),
     [strokes], // eslint-disable-line react-hooks/exhaustive-deps
   );
+
+  // --- big vector maps --------------------------------------------------------
+  // A viewBox change invalidates vector rendering, so an SVG background is
+  // re-drawn path-by-path EVERY pan/zoom frame — a 150k-path map is hopeless
+  // (a browser tab feels fine only because it rasterises once and then scrolls a
+  // cached bitmap). So we do the same: rasterise the SVG at the resolution it is
+  // actually shown at. Panning then costs one bitmap blit, and we re-rasterise
+  // (debounced) only when the zoom changes enough to be visible — so it stays
+  // as sharp as the screen can show instead of a fixed, blurry snapshot.
+  const isSvg = !!map?.image && /\.svg(\?|$)/i.test(map.image);
+  const [raster, setRaster] = useState(null); // object URL of the baked bitmap
+
+  useEffect(() => {
+    if (!isSvg || !map) return undefined;
+    let cancelled = false;
+    let made = null;
+    rasterizeSvg(map.image, map.image_w, map.image_h).then((url) => {
+      if (cancelled) { if (url) URL.revokeObjectURL(url); return; }
+      made = url;
+      setRaster(url);
+    });
+    return () => {
+      cancelled = true;
+      setRaster(null);
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [isSvg, map?.image, map?.image_w, map?.image_h]);
+
+  // Show the vector straight away so the map is never blank, then swap to the
+  // baked bitmap the moment it is ready. If the bake fails we simply keep the
+  // vector — no worse than before.
+  const background = (isSvg && raster) || map?.image;
 
   if (!map) return <div className="map-empty">No map selected</div>;
 
@@ -392,9 +453,8 @@ export default function MapCanvas({
           <rect x={vb.x - 10} y={vb.y - 10} width={vb.w + 20} height={vb.h + 20} fill="url(#wood)" />
           <rect x={-8} y={-8} width={map.image_w + 16} height={map.image_h + 16}
             fill="#0d0a06" stroke="#5a4426" strokeWidth={6} rx={4} />
-          {map.image
-            ? <image href={map.image} width={map.image_w} height={map.image_h} />
-            : <rect width={map.image_w} height={map.image_h} fill="#221a12" />}
+          <rect width={map.image_w} height={map.image_h} fill="#221a12" />
+          {background && <image href={background} width={map.image_w} height={map.image_h} />}
 
           {strokeLayer}
           {preview && renderStroke({ ...preview, id: 'preview', flipped: 0 }, 'preview')}
