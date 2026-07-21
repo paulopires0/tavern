@@ -34,9 +34,9 @@ export const TOKEN_MAX_VIEW_FRACTION = 0.2;  // on-screen cap: fraction of the s
 export const TOKEN_MIN_SCALE = 50;
 export const TOKEN_MIN_PX = TOKEN_METERS * TOKEN_MIN_SCALE;
 export const TOKEN_MAX_FRACTION = 0.18;      // server-side cap: fraction of map width
-// Map ICONS (doors, chests, shops) are NOT world-sized: they render at a fixed
-// ICON_PX (image pixels) × the map's icon_scale (editor), on every map.
-export const ICON_PX = 46;
+// Map ICONS (doors, chests, shops) share the reference token's footprint and
+// scale with it; the map's icon_scale knob (editor) is a fine-tune on top,
+// where 1 means exactly the token size. See MapCanvas `iconS`.
 // How close (meters) a dropped token must land to a chest/shop to trigger it.
 export const TRIGGER_RADIUS_METERS = 1.2;
 // Doors are smaller targets — you must land closer to actually step through.

@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  TOKEN_METERS, TOKEN_MIN_SCREEN_PX, TOKEN_MAX_VIEW_FRACTION, ICON_PX,
+  TOKEN_METERS, TOKEN_MIN_SCREEN_PX, TOKEN_MAX_VIEW_FRACTION,
   MAP_LABEL_OF_TOKEN, MAP_LABEL_MIN_SCREEN_PX,
   MAP_SETTLE_MS, MAP_TILE_PX, MAP_BASE_PX, MAP_TILE_PAD,
 } from '../../shared/gameRules.js';
@@ -558,14 +558,18 @@ export default function MapCanvas({
     return Math.min(Math.max(imgPx, minImg), Math.max(minImg, maxImg));
   };
   const baseToken = clampToken(worldToken);
-  // Map ICONS (doors, chests, shops) are fixed-size on every map, scaled only
-  // by the editor's icon-size knob.
-  const iconS = ICON_PX * (map.icon_scale || 1);
+  // Map ICONS (doors, chests, shops) share the reference token's footprint and
+  // scale with it, so they read as things standing on the map, not fixed HUD
+  // marks. The editor's icon-size knob is a per-map fine-tune on top (1 = the
+  // token size exactly).
+  const iconS = baseToken * (map.icon_scale || 1);
   const labelFs = Math.max(baseToken * 0.3, map.image_w / 115); // objects, rings, doors
   // A token's NAME follows the size of that token — a doubled-size monster gets
   // a doubled-size name — with a screen-space floor so it stays readable.
   const labelForToken = (s) => Math.max(s * MAP_LABEL_OF_TOKEN, MAP_LABEL_MIN_SCREEN_PX / zoomK);
-  const doorS = iconS * 0.75;
+  // The door is a diamond (a square turned 45°); sizing its SIDE to iconS/√2
+  // makes its overall footprint match the token square exactly.
+  const doorSide = iconS / Math.SQRT2;
 
   return (
     <div className="map-wrap" ref={wrapRef}>
@@ -678,11 +682,11 @@ export default function MapCanvas({
             if (o.kind === 'connection') {
               return (
                 <g key={o.objKey} pointerEvents="none">
-                  <rect x={-doorS / 2} y={-doorS / 2} width={doorS} height={doorS} rx={doorS * 0.22}
+                  <rect x={-doorSide / 2} y={-doorSide / 2} width={doorSide} height={doorSide} rx={doorSide * 0.22}
                     transform={`translate(${o.x},${o.y}) rotate(45)`}
-                    fill="#f3ead6" stroke="#1c150c" strokeWidth={Math.max(2, doorS * 0.13)} />
+                    fill="#f3ead6" stroke="#1c150c" strokeWidth={Math.max(2, doorSide * 0.13)} />
                   {o.label && (
-                    <text x={o.x} y={o.y + doorS * 1.35} textAnchor="middle" fontSize={labelFs}
+                    <text x={o.x} y={o.y + iconS * 0.62 + labelFs} textAnchor="middle" fontSize={labelFs}
                       fill="#f3ead6" stroke="#000" strokeWidth={0.7} paintOrder="stroke">{o.label}</text>
                   )}
                 </g>

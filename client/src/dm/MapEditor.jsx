@@ -242,7 +242,7 @@ export default function MapEditor({ global, detail, viewMapId, setViewMapId, act
                 <NumField label="Icon size ×" value={map.icon_scale} step={0.1}
                   onSave={(v) => act('PATCH', `/api/dm/maps/${map.id}`, { icon_scale: Math.max(0.2, v || 1) })} />
               </div>
-              <p className="muted small">Visibility = light level (×1 daylight, lower = darker). Also on the Live tab.</p>
+              <p className="muted small">Visibility = light level (×1 daylight, lower = darker). Also on the Live tab. Icon size is relative to a token (×1 = same size as a token).</p>
               <label className="row small">
                 <input type="checkbox" checked={!!map.is_template}
                   onChange={(e) => act('PATCH', `/api/dm/maps/${map.id}`, { is_template: e.target.checked ? 1 : 0 })} />
