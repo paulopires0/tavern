@@ -34,33 +34,53 @@ const STROKE_STYLE = {
   cliff: { stroke: '#e0a050', opacity: 0.85, dash: null },
 };
 
-// Bake a vector map into a bitmap ONCE, at up to 2× its nominal size but never
-// more than MAX_RASTER_PX in total (a 4000×4000 map bakes 1:1; a small one gets
-// extra detail for zooming). After this it behaves exactly like a PNG map: pan
-// and zoom are bitmap blits instead of re-drawing every path each frame.
-const MAX_RASTER_PX = 16e6;
-function rasterizeSvg(src, w, h) {
-  const k = Math.min(2, Math.sqrt(MAX_RASTER_PX / Math.max(1, w * h)));
+// --- vector maps, rendered like a map app -----------------------------------
+// A viewBox change re-draws vector content, so a 159k-path SVG re-renders every
+// path on every pan frame. But the browser CULLS to the region you ask for:
+// drawing a 1/40 crop costs ~3 ms where the whole map costs ~105 ms. So we never
+// draw the vector per frame — we render the VISIBLE REGION to a bitmap whenever
+// the view settles, at the resolution the screen is actually showing. Zoom in
+// and you get true vector detail (the crop gets cheaper the deeper you go); pan
+// and zoom stay smooth because they only move an already-rendered bitmap.
+const BASE_RASTER_PX = 4e6;   // whole-map underlay: always covers the board
+const DETAIL_RASTER_PX = 6e6; // crisp tile for whatever you're looking at
+
+// Rasterise a region of an already-decoded SVG image. `scale` is the wanted
+// bitmap px per image px; it is capped so one tile can't blow up memory.
+// Resolves { url, k } where k is the resolution actually achieved — it can be
+// below what was asked for once the pixel cap bites, and the caller must know
+// that or it will think the tile is sharper than it is and never refine it.
+function renderRegion(img, x, y, w, h, maxPx, scale) {
+  const k = Math.min(scale ?? 1, Math.sqrt(maxPx / Math.max(1, w * h)));
   const tw = Math.max(1, Math.round(w * k));
   const th = Math.max(1, Math.round(h * k));
   return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = tw;
-        canvas.height = th;
-        const ctx = canvas.getContext('2d');
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, tw, th);
-        canvas.toBlob((b) => resolve(b ? URL.createObjectURL(b) : null), 'image/png');
-      } catch {
-        resolve(null); // fall back to no background rather than break the map
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = src;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = tw;
+      canvas.height = th;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, x, y, w, h, 0, 0, tw, th);
+      canvas.toBlob((b) => resolve(b ? { url: URL.createObjectURL(b), k } : null), 'image/png');
+    } catch {
+      resolve(null); // keep the vector rather than break the map
+    }
   });
+}
+
+// The slice of the map on screen, padded so small pans reuse the same tile.
+function visibleRegion(vb, map) {
+  const padX = vb.w * 0.25;
+  const padY = vb.h * 0.25;
+  const x = Math.max(0, vb.x - padX);
+  const y = Math.max(0, vb.y - padY);
+  return {
+    x,
+    y,
+    w: Math.min(map.image_w - x, vb.w + padX * 2),
+    h: Math.min(map.image_h - y, vb.h + padY * 2),
+  };
 }
 
 export default function MapCanvas({
@@ -214,28 +234,68 @@ export default function MapCanvas({
   // (debounced) only when the zoom changes enough to be visible — so it stays
   // as sharp as the screen can show instead of a fixed, blurry snapshot.
   const isSvg = !!map?.image && /\.svg(\?|$)/i.test(map.image);
-  const [raster, setRaster] = useState(null); // object URL of the baked bitmap
+  const svgRef2 = useRef(null);             // the decoded vector, parsed once
+  const [base, setBase] = useState(null);   // whole-map underlay
+  const [tile, setTile] = useState(null);   // { url, x, y, w, h } crisp detail
 
+  // Decode the vector once, then draw a whole-map underlay so the board is
+  // always covered even while you fling around.
   useEffect(() => {
     if (!isSvg || !map) return undefined;
     let cancelled = false;
-    let made = null;
-    rasterizeSvg(map.image, map.image_w, map.image_h).then((url) => {
-      if (cancelled) { if (url) URL.revokeObjectURL(url); return; }
-      made = url;
-      setRaster(url);
-    });
+    let mine = null;
+    const img = new Image();
+    img.onload = async () => {
+      if (cancelled) return;
+      svgRef2.current = img;
+      const made = await renderRegion(img, 0, 0, map.image_w, map.image_h, BASE_RASTER_PX, 1);
+      if (cancelled) { if (made) URL.revokeObjectURL(made.url); return; }
+      if (!made) return;
+      mine = made.url;
+      setBase(made.url);
+    };
+    img.src = map.image;
     return () => {
       cancelled = true;
-      setRaster(null);
-      if (made) URL.revokeObjectURL(made);
+      svgRef2.current = null;
+      setBase(null);
+      setTile(null);
+      if (mine) URL.revokeObjectURL(mine);
     };
   }, [isSvg, map?.image, map?.image_w, map?.image_h]);
 
-  // Show the vector straight away so the map is never blank, then swap to the
-  // baked bitmap the moment it is ready. If the bake fails we simply keep the
-  // vector — no worse than before.
-  const background = (isSvg && raster) || map?.image;
+  // Whenever the view settles, re-render exactly what's on screen at screen
+  // resolution — this is what keeps fine detail readable however far you zoom.
+  useEffect(() => {
+    if (!isSvg || !vb || !map) return undefined;
+    const timer = setTimeout(async () => {
+      const img = svgRef2.current;
+      if (!img) return;
+      const want = size.w / vb.w;                       // bitmap px per image px
+      const region = visibleRegion(vb, map);
+      if (region.w <= 0 || region.h <= 0) return;       // panned right off the map
+      // Compare against what a tile CAN reach, not what we'd like: once the
+      // pixel cap bites, the achieved k stays below `want` and we would
+      // otherwise re-render the same tile forever.
+      const target = Math.min(want, Math.sqrt(DETAIL_RASTER_PX / Math.max(1, region.w * region.h)));
+      // already covered at a good-enough resolution? leave it alone
+      if (tile && tile.k >= target * 0.9
+          && tile.x <= region.x && tile.y <= region.y
+          && tile.x + tile.w >= region.x + region.w
+          && tile.y + tile.h >= region.y + region.h) return;
+      const made = await renderRegion(img, region.x, region.y, region.w, region.h, DETAIL_RASTER_PX, want);
+      if (!made) return;
+      setTile((prev) => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        return { url: made.url, ...region, k: made.k };
+      });
+    }, 180); // only once you stop moving
+    return () => clearTimeout(timer);
+  }, [isSvg, map?.image, vb?.x, vb?.y, vb?.w, size.w, size.h, base, tile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Until the vector is decoded, show it directly so the map is never blank.
+  const background = isSvg ? base : map?.image;
+  const rawVector = isSvg && !base ? map.image : null;
 
   if (!map) return <div className="map-empty">No map selected</div>;
 
@@ -454,7 +514,12 @@ export default function MapCanvas({
           <rect x={-8} y={-8} width={map.image_w + 16} height={map.image_h + 16}
             fill="#0d0a06" stroke="#5a4426" strokeWidth={6} rx={4} />
           <rect width={map.image_w} height={map.image_h} fill="#221a12" />
+          {rawVector && <image href={rawVector} width={map.image_w} height={map.image_h} />}
           {background && <image href={background} width={map.image_w} height={map.image_h} />}
+          {tile && (
+            <image href={tile.url} x={tile.x} y={tile.y} width={tile.w} height={tile.h}
+              preserveAspectRatio="none" />
+          )}
 
           {strokeLayer}
           {preview && renderStroke({ ...preview, id: 'preview', flipped: 0 }, 'preview')}
