@@ -43,7 +43,10 @@ const STROKE_STYLE = {
 // and you get true vector detail (the crop gets cheaper the deeper you go); pan
 // and zoom stay smooth because they only move an already-rendered bitmap.
 const BASE_RASTER_PX = 4e6;   // whole-map underlay: always covers the board
-const DETAIL_RASTER_PX = 6e6; // crisp tile for whatever you're looking at
+// Detail tile budget. Encoding dominates the refresh, and it scales with pixel
+// count, so this is kept just above a padded 1080p viewport: big enough that
+// the tile is still full screen resolution, small enough to land quickly.
+const DETAIL_RASTER_PX = 4e6;
 
 // Rasterise a region of an already-decoded SVG image. `scale` is the wanted
 // bitmap px per image px; it is capped so one tile can't blow up memory.
@@ -62,7 +65,10 @@ function renderRegion(img, x, y, w, h, maxPx, scale) {
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, x, y, w, h, 0, 0, tw, th);
-      canvas.toBlob((b) => resolve(b ? { url: URL.createObjectURL(b), k } : null), 'image/png');
+      // WebP encodes and decodes several times faster than PNG at this size and
+      // is visually indistinguishable here — that speed is what stops the
+      // refresh from being perceptible. Browsers that lack it fall back to PNG.
+      canvas.toBlob((b) => resolve(b ? { url: URL.createObjectURL(b), k } : null), 'image/webp', 0.92);
     } catch {
       resolve(null); // keep the vector rather than break the map
     }
@@ -71,8 +77,10 @@ function renderRegion(img, x, y, w, h, maxPx, scale) {
 
 // The slice of the map on screen, padded so small pans reuse the same tile.
 function visibleRegion(vb, map) {
-  const padX = vb.w * 0.25;
-  const padY = vb.h * 0.25;
+  // enough margin that ordinary panning stays inside the tile, without paying
+  // for a much larger (slower) render
+  const padX = vb.w * 0.18;
+  const padY = vb.h * 0.18;
   const x = Math.max(0, vb.x - padX);
   const y = Math.max(0, vb.y - padY);
   return {
@@ -268,6 +276,7 @@ export default function MapCanvas({
   // resolution — this is what keeps fine detail readable however far you zoom.
   useEffect(() => {
     if (!isSvg || !vb || !map) return undefined;
+    let cancelled = false; // a render that lands after the view moved is stale
     const timer = setTimeout(async () => {
       const img = svgRef2.current;
       if (!img) return;
@@ -285,12 +294,23 @@ export default function MapCanvas({
           && tile.y + tile.h >= region.y + region.h) return;
       const made = await renderRegion(img, region.x, region.y, region.w, region.h, DETAIL_RASTER_PX, want);
       if (!made) return;
+      // Decode BEFORE showing it. Swapping straight to a fresh blob makes the
+      // browser fetch+decode while it paints, so the old tile is already gone
+      // and the blurry underlay shows through for a frame — that's the flash.
+      try {
+        const pre = new Image();
+        pre.src = made.url;
+        if (pre.decode) await pre.decode();
+      } catch { /* decode is an optimisation; show it anyway */ }
+      if (cancelled) { URL.revokeObjectURL(made.url); return; }
       setTile((prev) => {
-        if (prev?.url) URL.revokeObjectURL(prev.url);
+        // hold the old bitmap a moment longer: revoking it the instant we swap
+        // can pull it out from under a paint that hasn't happened yet
+        if (prev?.url) setTimeout(() => URL.revokeObjectURL(prev.url), 2000);
         return { url: made.url, ...region, k: made.k };
       });
     }, 180); // only once you stop moving
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [isSvg, map?.image, vb?.x, vb?.y, vb?.w, size.w, size.h, base, tile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Until the vector is decoded, show it directly so the map is never blank.
