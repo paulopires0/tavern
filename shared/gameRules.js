@@ -42,6 +42,29 @@ export const TRIGGER_RADIUS_METERS = 1.2;
 // Doors are smaller targets — you must land closer to actually step through.
 export const DOOR_TRIGGER_METERS = 0.6;
 
+// Token NAMES scale with the token they belong to (a big monster gets a big
+// name), never dropping below MAP_LABEL_MIN_SCREEN_PX on screen so they stay
+// readable at any zoom.
+export const MAP_LABEL_OF_TOKEN = 0.4;      // name height as a fraction of the token
+export const MAP_LABEL_MIN_SCREEN_PX = 11;
+
+// --- Vector (SVG) map rendering ------------------------------------------------
+// An SVG map is not re-drawn while you move — that would mean re-painting every
+// path each frame. Instead the visible slice is re-rendered from the vector once
+// the view SETTLES, which is what keeps fine detail sharp at any zoom.
+//   MAP_SETTLE_MS   how long after you stop before the detail sharpens. Lower =
+//                   refreshes more often (snappier, more work per gesture).
+//   MAP_TILE_PX     detail-tile budget in pixels. Raise for sharper tiles at the
+//                   cost of a slower refresh; the encode time scales with this.
+//   MAP_BASE_PX     whole-map underlay budget — what shows through before a
+//                   fresh tile lands.
+//   MAP_TILE_PAD    margin rendered around the view so ordinary panning stays
+//                   inside the tile.
+export const MAP_SETTLE_MS = 140;
+export const MAP_TILE_PX = 4e6;
+export const MAP_BASE_PX = 4e6;
+export const MAP_TILE_PAD = 0.18;
+
 // Weather is a CAMPAIGN-WIDE state, not per-map: pick one and every map shows
 // its matching variant, or falls back to its normal (base) look. Fixed set so
 // "night" means the same everywhere.

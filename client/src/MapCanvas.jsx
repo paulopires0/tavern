@@ -1,5 +1,9 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { TOKEN_METERS, TOKEN_MIN_SCREEN_PX, TOKEN_MAX_VIEW_FRACTION, ICON_PX } from '../../shared/gameRules.js';
+import {
+  TOKEN_METERS, TOKEN_MIN_SCREEN_PX, TOKEN_MAX_VIEW_FRACTION, ICON_PX,
+  MAP_LABEL_OF_TOKEN, MAP_LABEL_MIN_SCREEN_PX,
+  MAP_SETTLE_MS, MAP_TILE_PX, MAP_BASE_PX, MAP_TILE_PAD,
+} from '../../shared/gameRules.js';
 import { strokeSegments, cliffNormal } from '../../shared/geometry.js';
 
 // Continuous-map renderer shared by the TV, DM live console and map editor.
@@ -42,11 +46,9 @@ const STROKE_STYLE = {
 // the view settles, at the resolution the screen is actually showing. Zoom in
 // and you get true vector detail (the crop gets cheaper the deeper you go); pan
 // and zoom stay smooth because they only move an already-rendered bitmap.
-const BASE_RASTER_PX = 4e6;   // whole-map underlay: always covers the board
-// Detail tile budget. Encoding dominates the refresh, and it scales with pixel
-// count, so this is kept just above a padded 1080p viewport: big enough that
-// the tile is still full screen resolution, small enough to land quickly.
-const DETAIL_RASTER_PX = 4e6;
+// Budgets and timing live in shared/gameRules.js with the rest of the tunables.
+const BASE_RASTER_PX = MAP_BASE_PX;
+const DETAIL_RASTER_PX = MAP_TILE_PX;
 
 // Rasterise a region of an already-decoded SVG image. `scale` is the wanted
 // bitmap px per image px; it is capped so one tile can't blow up memory.
@@ -77,10 +79,8 @@ function renderRegion(img, x, y, w, h, maxPx, scale) {
 
 // The slice of the map on screen, padded so small pans reuse the same tile.
 function visibleRegion(vb, map) {
-  // enough margin that ordinary panning stays inside the tile, without paying
-  // for a much larger (slower) render
-  const padX = vb.w * 0.18;
-  const padY = vb.h * 0.18;
+  const padX = vb.w * MAP_TILE_PAD;
+  const padY = vb.h * MAP_TILE_PAD;
   const x = Math.max(0, vb.x - padX);
   const y = Math.max(0, vb.y - padY);
   return {
@@ -309,7 +309,7 @@ export default function MapCanvas({
         if (prev?.url) setTimeout(() => URL.revokeObjectURL(prev.url), 2000);
         return { url: made.url, ...region, k: made.k };
       });
-    }, 180); // only once you stop moving
+    }, MAP_SETTLE_MS); // only once you stop moving
     return () => { cancelled = true; clearTimeout(timer); };
   }, [isSvg, map?.image, vb?.x, vb?.y, vb?.w, size.w, size.h, base, tile]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -492,7 +492,10 @@ export default function MapCanvas({
   // Map ICONS (doors, chests, shops) are fixed-size on every map, scaled only
   // by the editor's icon-size knob.
   const iconS = ICON_PX * (map.icon_scale || 1);
-  const labelFs = Math.max(baseToken * 0.3, map.image_w / 115);
+  const labelFs = Math.max(baseToken * 0.3, map.image_w / 115); // objects, rings, doors
+  // A token's NAME follows the size of that token — a doubled-size monster gets
+  // a doubled-size name — with a screen-space floor so it stays readable.
+  const labelForToken = (s) => Math.max(s * MAP_LABEL_OF_TOKEN, MAP_LABEL_MIN_SCREEN_PX / zoomK);
   const doorS = iconS * 0.75;
 
   return (
@@ -602,7 +605,9 @@ export default function MapCanvas({
               );
             }
             // NPCs are creatures (world-sized tokens); chests/shops are icons.
-            const s = o.kind === 'npc' ? clampToken(worldToken * (o.scale || 1)) : iconS;
+            const isNpc = o.kind === 'npc';
+            const s = isNpc ? clampToken(worldToken * (o.scale || 1)) : iconS;
+            const fs = isNpc ? labelForToken(s) : labelFs; // an NPC's name follows its token
             const icon = o.icon
               || (o.kind === 'chest' ? '/uploads/chest-token/default'
                 : o.kind === 'shop' ? '/uploads/shop-token/default'
@@ -612,7 +617,7 @@ export default function MapCanvas({
                 <image href={icon} x={o.x - s / 2} y={o.y - s / 2} width={s} height={s}
                   preserveAspectRatio="xMidYMid meet" />
                 {o.label && (
-                  <text x={o.x} y={o.y + s * 0.62 + labelFs} textAnchor="middle" fontSize={labelFs}
+                  <text x={o.x} y={o.y + s * 0.62 + fs} textAnchor="middle" fontSize={fs}
                     fill="#f3ead6" stroke="#000" strokeWidth={0.7} paintOrder="stroke">{o.label}</text>
                 )}
               </g>
@@ -623,12 +628,13 @@ export default function MapCanvas({
             if (t.x == null) return null;
             const isDragged = dragDelta && (dragDelta.key === t.tokenKey ||
               (selectedKeys?.has(dragDelta.key) && selectedKeys?.has(t.tokenKey)));
+            const tokenSize = clampToken(worldToken * (t.scale || 1));
             return (
               <TokenNode
                 key={t.tokenKey}
                 t={t}
-                size={clampToken(worldToken * (t.scale || 1))}
-                labelFs={labelFs}
+                size={tokenSize}
+                labelFs={labelForToken(tokenSize)}
                 selected={!!selectedKeys?.has(t.tokenKey)}
                 dragDelta={isDragged ? dragDelta : null}
                 onPointerDown={(ev) => onTokenPointerDown(t, ev)}
