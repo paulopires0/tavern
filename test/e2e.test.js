@@ -490,6 +490,28 @@ test('e2e', async (t) => {
     });
   });
 
+  await t.test('chest loot can be hand-stocked: a pool item and a brand-new one', async () => {
+    // add a specific already-created item to the chest (invStmt exposes the
+    // item id as `id`, the entry id as `entry_id`)
+    await api('POST', '/api/dm/inventory/add', { ownerType: 'chest', ownerId: chestId, itemId: itemSword, quantity: 2 });
+    let contents = await api('GET', `/api/dm/chests/${chestId}`);
+    const sword = contents.entries.find((e) => e.id === itemSword);
+    assert.ok(sword && sword.quantity >= 2, 'the chosen pool item lands in the chest');
+
+    // create a new item — it joins the pool — then drop it in the chest
+    const made = await api('POST', '/api/dm/items', {
+      name: 'Chest-forged Amulet', category: 'item', weight: 1, value: 40, tags: ['common'],
+    });
+    assert.ok(made.id, 'the new item is created');
+    const dm = await pushedDm();
+    const g = await dm.next('state');
+    assert.ok(g.items.some((i) => i.id === made.id), 'and it is now part of the item pool');
+
+    await api('POST', '/api/dm/inventory/add', { ownerType: 'chest', ownerId: chestId, itemId: made.id, quantity: 1 });
+    contents = await api('GET', `/api/dm/chests/${chestId}`);
+    assert.ok(contents.entries.some((e) => e.id === made.id), 'the new item is in the chest');
+  });
+
   await t.test('typed sellers: shop trigger, trade payouts, coherent restocks', async () => {
     shopId = (await api('POST', '/api/dm/shops', { name: 'Fletcher', category: 'bowman', map_id: mapB, x: 900, y: 300 })).id;
     await api('POST', '/api/dm/inventory/add', { ownerType: 'shop', ownerId: shopId, itemId: itemSword, quantity: 1 });

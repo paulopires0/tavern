@@ -34,6 +34,7 @@ import { strokeSegments, cliffNormal } from '../../shared/geometry.js';
 //   onTokensMove([{token, x, y}]) — the dragged token's move comes FIRST
 //   onNoteToggle(note)   click an open card or its pin: fold/unfold
 //   onNoteMove(note, {box_dx, box_dy})  after dragging an open card
+//   onObjectClick(object)  click an object flagged {clickable:true} (DM) — e.g. loot
 //   onCanvasClick(x, y)
 const STROKE_STYLE = {
   wall: { stroke: '#c0504d', opacity: 0.8, dash: null },
@@ -97,7 +98,8 @@ function visibleRegion(vb, map) {
 export default function MapCanvas({
   map, strokes = [], ink = [], fogGrid = null, tokens = [], objects = [], rings = [],
   notes = [], guide = null, frameBox = null, selectedKeys = null, paint = null,
-  onStroke, onErase, onTokenClick, onTokensMove, onNoteToggle, onNoteMove, onCanvasClick,
+  onStroke, onErase, onTokenClick, onTokensMove, onNoteToggle, onNoteMove,
+  onObjectClick, onCanvasClick,
 }) {
   const wrapRef = useRef(null);
   const svgRef = useRef(null);
@@ -355,6 +357,16 @@ export default function MapCanvas({
     gestureRef.current = { type: 'drag', token: t, p0: toSvg(ev), moved: false, shift: ev.shiftKey };
   }
 
+  // Map icons the DM can act on (a chest to loot, a shop to stock). A click
+  // opens it; a small drag is treated as a pan of the map instead, so the icon
+  // never traps a pan that merely started on top of it.
+  function onObjectPointerDown(o, ev) {
+    if (paint || !onObjectClick) return;
+    ev.stopPropagation();
+    svgRef.current.setPointerCapture(ev.pointerId);
+    gestureRef.current = { type: 'object', object: o, p0: toSvg(ev), vb0: vb, startClient: [ev.clientX, ev.clientY], moved: false };
+  }
+
   // Open note cards drag freely (even off the map art, onto the table); a
   // click without movement folds them instead.
   function onNotePointerDown(n, base, ev) {
@@ -384,6 +396,12 @@ export default function MapCanvas({
       const p = toSvg(ev);
       if (Math.hypot(p.x - g.p0.x, p.y - g.p0.y) > 5) g.moved = true;
       if (g.moved) setNoteDrag({ id: g.note.id, dx: p.x - g.p0.x, dy: p.y - g.p0.y });
+    } else if (g.type === 'object') {
+      // a drag starting on an icon just pans the map
+      const dx = (ev.clientX - g.startClient[0]) * (g.vb0.w / size.w);
+      const dy = (ev.clientY - g.startClient[1]) * (g.vb0.h / size.h);
+      if (Math.hypot(ev.clientX - g.startClient[0], ev.clientY - g.startClient[1]) > 4) g.moved = true;
+      if (g.moved) setVb({ ...g.vb0, x: g.vb0.x - dx, y: g.vb0.y - dy });
     } else if (g.type === 'erase') {
       const p = toSvg(ev);
       if (Math.hypot(p.x - g.last.x, p.y - g.last.y) > Math.max(3, paint.width / 3)) {
@@ -424,6 +442,10 @@ export default function MapCanvas({
         box_dx: g.base.bx + (p.x - g.p0.x) - g.note.x,
         box_dy: g.base.by + (p.y - g.p0.y) - g.note.y,
       });
+      return;
+    }
+    if (g.type === 'object') {
+      if (!g.moved) onObjectClick?.(g.object);
       return;
     }
     if (g.type === 'drag') {
@@ -674,8 +696,14 @@ export default function MapCanvas({
               || (o.kind === 'chest' ? '/uploads/chest-token/default'
                 : o.kind === 'shop' ? '/uploads/shop-token/default'
                   : '/uploads/npc-token/default');
+            // The parent flags which icons it wants to act on (a chest to loot);
+            // everything else, and the read-only party view, stays inert.
+            const clickable = onObjectClick && !paint && o.clickable;
             return (
-              <g key={o.objKey} pointerEvents="none" opacity={o.hidden ? 0.35 : o.opened ? 0.65 : 1}>
+              <g key={o.objKey} opacity={o.hidden ? 0.35 : o.opened ? 0.65 : 1}
+                pointerEvents={clickable ? 'auto' : 'none'}
+                style={clickable ? { cursor: 'pointer' } : undefined}
+                onPointerDown={clickable ? (ev) => onObjectPointerDown(o, ev) : undefined}>
                 <image href={icon} x={o.x - s / 2} y={o.y - s / 2} width={s} height={s}
                   preserveAspectRatio="xMidYMid meet" />
                 {o.label && (

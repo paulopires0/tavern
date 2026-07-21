@@ -302,6 +302,13 @@ code { background: #0008; padding: 2px 6px; border-radius: 6px; }
   box-shadow: 0 10px 48px #000;
 }
 .dialog.wide { width: min(780px, 96vw); }
+/* Putting loot into a chest: pool picker + inline new-item form */
+.chest-add {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px; margin: 10px 0; background: #0000001f;
+}
+.chest-add .grow { flex: 1; min-width: 160px; }
+.chest-new { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
 .trade-panes { display: flex; gap: 14px; }
 .trade-panes .pane { flex: 1; min-width: 0; }
 .item-detail .item-art { max-width: 100%; max-height: 260px; border-radius: 8px; }

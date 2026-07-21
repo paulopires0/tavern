@@ -1,14 +1,26 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { upload } from '../api.js';
+import { ITEM_CATEGORIES, MEASURES } from '../../../shared/gameRules.js';
 
-// Loot UI opened by dropping a character on a chest (or from the editor).
-// Auto-generate rolls rarity-weighted items server-side (never lore items);
-// "give" moves an entry into the chosen character's inventory. The contents
-// mirror onto a player's phone only while "show on phone" is ticked.
-export default function ChestDialog({ chestId, characterId, characters, session, act, onClose }) {
+// Loot UI: opened by dropping a character on a chest, or by clicking the chest
+// on the Live map to edit what is inside. Contents can be auto-generated
+// (rarity-weighted, never lore), stocked from the existing item pool, or filled
+// with a brand-new item that also joins the pool. "Give" moves an entry into a
+// character's inventory. The contents mirror onto a player's phone only while
+// "show on phone" is ticked.
+export default function ChestDialog({ chestId, characterId, characters, items = [], session, act, onClose }) {
   const [data, setData] = useState(null);
   const [target, setTarget] = useState(characterId ?? characters[0]?.id);
   const [genCount, setGenCount] = useState(3);
+
+  // add-from-pool
+  const [pick, setPick] = useState('');
+  const [qty, setQty] = useState(1);
+  // create-a-new-item
+  const emptyItem = { name: '', category: 'item', measure: 'unit', weight: 0, value: 0, damage: '', range: 0, armor: 0, description: '' };
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState(emptyItem);
+  const ff = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   async function refresh() {
     const res = await act('GET', `/api/dm/chests/${chestId}`);
@@ -22,6 +34,14 @@ export default function ChestDialog({ chestId, characterId, characters, session,
     onClose();
   }
 
+  // The pool, newest-relevant first, grouped by category for the picker.
+  const byCategory = useMemo(() => {
+    const groups = {};
+    for (const it of items) (groups[it.category] ||= []).push(it);
+    for (const list of Object.values(groups)) list.sort((a, b) => a.name.localeCompare(b.name));
+    return groups;
+  }, [items]);
+
   if (!data) return null;
   const { chest, entries } = data;
   const sharedWith = session?.chestId === chestId && session.shared
@@ -32,6 +52,38 @@ export default function ChestDialog({ chestId, characterId, characters, session,
     await act('POST', '/api/dm/inventory/transfer', {
       entryId: entry.entry_id, toType: 'character', toId: Number(target), quantity: 1,
     });
+    refresh();
+  }
+
+  async function addExisting() {
+    if (!pick) return;
+    await act('POST', '/api/dm/inventory/add', {
+      ownerType: 'chest', ownerId: chestId, itemId: Number(pick), quantity: Math.max(1, Number(qty) || 1),
+    });
+    setPick(''); setQty(1);
+    refresh();
+  }
+
+  async function createAndAdd() {
+    if (!form.name.trim()) return;
+    const payload = {
+      name: form.name.trim(),
+      category: form.category,
+      measure: form.measure,
+      weight: Number(form.weight) || 0,
+      value: Number(form.value) || 0,
+      damage: form.category === 'weapon' ? (form.damage || null) : null,
+      range: form.category === 'weapon' ? Number(form.range) || 0 : null,
+      armor: form.category === 'armor' ? Number(form.armor) || 0 : null,
+      description: form.description || '',
+      tags: ['common'],
+    };
+    const made = await act('POST', '/api/dm/items', payload); // joins the item pool
+    if (!made?.id) return;
+    await act('POST', '/api/dm/inventory/add', {
+      ownerType: 'chest', ownerId: chestId, itemId: made.id, quantity: Math.max(1, Number(qty) || 1),
+    });
+    setForm(emptyItem); setCreating(false); setQty(1);
     refresh();
   }
 
@@ -82,6 +134,67 @@ export default function ChestDialog({ chestId, characterId, characters, session,
               const f = e.target.files[0];
               if (f) { await act('PATCH', `/api/dm/chests/${chestId}`, { icon: await upload('chest-token', f) }); refresh(); }
             }} /></label>
+        </div>
+
+        {/* Put items in: pick from the pool, or create a new one on the spot */}
+        <div className="chest-add">
+          <div className="row">
+            <select className="grow" value={pick} onChange={(e) => setPick(e.target.value)}>
+              <option value="">— add an existing item —</option>
+              {ITEM_CATEGORIES.filter((c) => byCategory[c]?.length).map((c) => (
+                <optgroup key={c} label={c}>
+                  {byCategory[c].map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            <input type="number" className="num" min="1" title="How many" value={qty}
+              onChange={(e) => setQty(e.target.value)} />
+            <button disabled={!pick} onClick={addExisting}>Add</button>
+          </div>
+          <div className="row">
+            <button className="ghost small" onClick={() => setCreating((v) => !v)}>
+              {creating ? 'Cancel new item' : '+ Create a new item…'}
+            </button>
+            <span className="muted small">A new item also joins your item pool.</span>
+          </div>
+
+          {creating && (
+            <div className="chest-new">
+              <div className="field-grid">
+                <label className="field"><span>Name</span><input value={form.name} onChange={ff('name')} autoFocus /></label>
+                <label className="field"><span>Category</span>
+                  <select value={form.category} onChange={ff('category')}>
+                    {ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </label>
+                {['item', 'consumable'].includes(form.category) && (
+                  <label className="field"><span>Measured in</span>
+                    <select value={form.measure} onChange={ff('measure')}>
+                      {MEASURES.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </label>
+                )}
+                <label className="field"><span>Weight</span>
+                  <input type="number" value={form.weight} onChange={ff('weight')} /></label>
+                <label className="field"><span>Value (gp)</span>
+                  <input type="number" value={form.value} onChange={ff('value')} /></label>
+                {form.category === 'weapon' && (
+                  <>
+                    <label className="field"><span>Damage</span><input value={form.damage} onChange={ff('damage')} placeholder="1d8+1" /></label>
+                    <label className="field"><span>Range (m)</span><input type="number" value={form.range} onChange={ff('range')} /></label>
+                  </>
+                )}
+                {form.category === 'armor' && (
+                  <label className="field"><span>Armor value</span><input type="number" value={form.armor} onChange={ff('armor')} /></label>
+                )}
+              </div>
+              <label className="field"><span>Description</span>
+                <input value={form.description} onChange={ff('description')} /></label>
+              <div className="row">
+                <button disabled={!form.name.trim()} onClick={createAndAdd}>Create &amp; put in chest</button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="row">

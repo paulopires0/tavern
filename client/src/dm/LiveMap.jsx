@@ -166,8 +166,8 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
   })));
 
   const objects = (detail?.chests || []).map((c) => ({
-    objKey: `chest${c.id}`, kind: 'chest', x: c.x, y: c.y, icon: c.icon,
-    opened: c.state === 'opened', hidden: c.hidden,
+    objKey: `chest${c.id}`, kind: 'chest', id: c.id, x: c.x, y: c.y, icon: c.icon,
+    opened: c.state === 'opened', hidden: c.hidden, clickable: true, // click to edit loot
   })).concat((detail?.shops || []).map((s) => ({
     objKey: `shop${s.id}`, kind: 'shop', x: s.x, y: s.y, icon: s.icon, label: s.name,
   }))).concat((detail?.connections || []).map((c) => ({
@@ -227,6 +227,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           onTokensMove={isWorld ? null : onTokensMove}
           onNoteToggle={(n) => act('PATCH', `/api/dm/annotations/${n.id}`, { open: n.open ? 0 : 1 })}
           onNoteMove={(n, off) => act('PATCH', `/api/dm/annotations/${n.id}`, off)}
+          onObjectClick={(o) => { if (o.kind === 'chest') setChestOpen({ chestId: o.id }); }}
           onCanvasClick={onCanvasClick}
         />
         {map && (
@@ -540,6 +541,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           chestId={chestOpen.chestId}
           characterId={chestOpen.characterId}
           characters={global.characters}
+          items={global.items}
           session={global.chestSession}
           act={act}
           onClose={() => setChestOpen(null)}
