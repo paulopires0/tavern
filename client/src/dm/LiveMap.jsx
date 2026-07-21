@@ -8,6 +8,7 @@ import { upload } from '../api.js';
 import { NumField } from '../fields.jsx';
 import { CropInput } from '../ImageCropper.jsx';
 import { WEATHERS } from '../../../shared/gameRules.js';
+import { journeyIsLive } from '../journey.js';
 
 // The DM's table: drag tokens (shift-click selects several and they move
 // together), walls/cliffs enforce themselves, doors teleport, weapon ranges
@@ -140,7 +141,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
   // While a kingdom journey plays, the DM (like the TV) sees just the walking
   // party marker on the world map.
   const journey = global.worldTravel;
-  const journeying = isWorld && journey?.path?.length >= 2;
+  const journeying = isWorld && journeyIsLive(journey); // never replay a finished trip
   const tokens = journeying ? [{
     tokenKey: `travel-${journey.nonce}`, kind: 'travel',
     x: journey.path[journey.path.length - 1][0], y: journey.path[journey.path.length - 1][1],

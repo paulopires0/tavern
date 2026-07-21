@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { connectSocket } from './socket.js';
 import MapCanvas from './MapCanvas.jsx';
 import YouTubePlayer from './YouTubePlayer.jsx';
+import { journeyIsLive } from './journey.js';
 
 // Kingdom & dungeon maps FRAME only what the party has revealed (fog cells that
 // are seen/observed, plus the party's own tokens). Returned in image px, or
@@ -119,7 +120,8 @@ export default function TVView({ tvKey }) {
   const worldTravel = global?.worldTravel;
   useEffect(() => {
     if (!worldTravel?.nonce || worldTravel.nonce === lastTravelNonce.current) return;
-    lastTravelNonce.current = worldTravel.nonce;
+    lastTravelNonce.current = worldTravel.nonce; // consumed, whether or not we play it
+    if (!journeyIsLive(worldTravel)) return;     // stale cue (reload after the trip)
     setTravel(worldTravel);
     const t = setTimeout(() => setTravel(null), (worldTravel.durationMs || 2600) + 1500);
     return () => clearTimeout(t);

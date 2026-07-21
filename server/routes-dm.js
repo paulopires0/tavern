@@ -517,7 +517,24 @@ dmRouter.post('/world-travel', (req, res) => {
   if (path.length < 1) return bad(res, 'path required');
   const radius = Number(req.body?.radius) > 0 ? Number(req.body.radius) : undefined;
   revealWorldPath(path, radius);
-  setConfig('world_travel', { path, nonce: Date.now() });
+  let lenPx = 0;
+  for (let i = 1; i < path.length; i++) {
+    lenPx += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
+  }
+  const durationMs = Math.min(11000, Math.max(3000, Math.round(lenPx * 3.6)));
+  const nonce = Date.now();
+  setConfig('world_travel', { path, nonce, durationMs });
+  // the cue is a one-shot: drop it once the walk is over, so re-opening the
+  // kingdom map later doesn't replay the trip
+  const timer = setTimeout(() => {
+    try {
+      if (getConfig('world_travel', null)?.nonce === nonce) {
+        setConfig('world_travel', null);
+        pushAll();
+      }
+    } catch { /* db closed: nothing to clean up */ }
+  }, durationMs + 700);
+  timer.unref?.();
   ok(res);
 });
 
