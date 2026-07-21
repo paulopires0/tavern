@@ -208,6 +208,42 @@ code { background: #0008; padding: 2px 6px; border-radius: 6px; }
   position: absolute; bottom: 0; left: 0; right: 0; background: #000d; color: var(--accent);
   padding: 8px 14px; display: flex; gap: 10px; align-items: center; z-index: 12;
 }
+/* The drawing palette, floating on the left edge of the map */
+.map-pane.painting { cursor: crosshair; }
+.map-pane.painting .mapcanvas { touch-action: none; }
+.paintbar {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  z-index: 13; display: flex; flex-direction: column; gap: 8px; align-items: center;
+}
+.paintbar.on {
+  background: #12100bf2; border: 1px solid var(--border-strong); border-radius: 12px;
+  padding: 8px 7px; box-shadow: 0 6px 22px #000a;
+}
+.paint-power {
+  width: 38px; height: 38px; padding: 0; border-radius: 10px; font-size: 1.1rem;
+  background: #12100be6; border: 1px solid var(--border-strong); cursor: pointer;
+}
+.paint-power.active { background: var(--accent); color: #1a1410; border-color: var(--accent); }
+.paint-tools, .paint-widths, .paint-acts { display: flex; flex-direction: column; gap: 4px; }
+.paint-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.paintbar .paint-btn {
+  width: 34px; height: 30px; padding: 0; display: grid; place-items: center;
+  background: #2a2318; border: 1px solid var(--border); border-radius: 7px;
+  color: var(--fg); font-size: .95rem; cursor: pointer;
+}
+.paintbar .paint-btn:hover:not(:disabled) { background: #3a3122; }
+.paintbar .paint-btn.active { background: var(--accent); color: #1a1410; border-color: var(--accent); }
+.paintbar .paint-btn:disabled { opacity: .35; cursor: default; }
+.paintbar .paint-btn.danger:hover:not(:disabled) { background: #6b2b26; }
+.paint-swatch {
+  width: 15px; height: 15px; border-radius: 50%; padding: 0; cursor: pointer;
+  border: 2px solid #0000; box-shadow: 0 0 0 1px #0008;
+}
+.paint-swatch.active { border-color: #fff; }
+.paint-dot { display: block; border-radius: 50%; box-shadow: 0 0 0 1px #0006; }
+/* the bar is a nuisance on a phone-sized DM screen; it stays, just tighter */
+@media (max-width: 900px) { .paintbar { left: 4px; gap: 5px; } }
+
 .side-panel {
   width: 330px; min-width: 330px; overflow-y: auto; padding: 12px;
   background: var(--bg2); border-left: 1px solid var(--border-strong);

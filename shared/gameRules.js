@@ -60,10 +60,19 @@ export const MAP_LABEL_MIN_SCREEN_PX = 11;
 //                   fresh tile lands.
 //   MAP_TILE_PAD    margin rendered around the view so ordinary panning stays
 //                   inside the tile.
-export const MAP_SETTLE_MS = 140;
+export const MAP_SETTLE_MS = 50;
 export const MAP_TILE_PX = 4e6;
 export const MAP_BASE_PX = 4e6;
-export const MAP_TILE_PAD = 0.18;
+export const MAP_TILE_PAD = 1;
+
+// --- The DM's ink (drawing over the map, seen by everyone) ---
+// Brush sizes are in METRES so a stroke means the same thing on a cramped
+// dungeon and on a kingdom map — the canvas converts with the map's px/m scale.
+export const INK_COLORS = ['#e4b343', '#d34b3f', '#4fa3e0', '#5db85d', '#f0ece2', '#1a1410'];
+export const INK_WIDTHS_M = [0.25, 0.6, 1.5, 4];
+export const INK_DEFAULT_COLOR = INK_COLORS[0];
+export const INK_DEFAULT_WIDTH_M = INK_WIDTHS_M[1];
+export const INK_ERASER_M = 1.5; // rubber radius
 
 // Weather is a CAMPAIGN-WIDE state, not per-map: pick one and every map shows
 // its matching variant, or falls back to its normal (base) look. Fixed set so

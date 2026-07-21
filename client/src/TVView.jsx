@@ -177,17 +177,18 @@ export default function TVView({ tvKey }) {
   }
 
   // No doors here: connections are DM knowledge, the party map never marks them.
-  const objects = (mapDetail.chests || []).map((c) => ({
-    objKey: `chest${c.id}`, kind: 'chest', x: c.x, y: c.y, icon: c.icon, opened: c.state === 'opened',
-  })).concat((mapDetail.shops || []).map((s2) => ({
+  // No chests either: an icon on the big screen announces "there is loot here"
+  // before anyone has looked — finding them is the DM's to narrate.
+  const objects = (mapDetail.shops || []).map((s2) => ({
     objKey: `shop${s2.id}`, kind: 'shop', x: s2.x, y: s2.y, icon: s2.icon, label: s2.name,
-  })));
+  }));
 
   return (
     <div className="tv-screen">
       <MapCanvas
         map={mapDetail.map}
         fogGrid={mapDetail.fogGrid}
+        ink={mapDetail.ink || []}
         tokens={tokens}
         objects={objects}
         frameBox={frameBox}

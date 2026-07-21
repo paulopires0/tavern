@@ -196,6 +196,12 @@ export function strokesOf(mapId) {
     .map((s) => ({ ...s, points: JSON.parse(s.points) }));
 }
 
+// Drawn-on-the-map ink, oldest first so later strokes lie on top.
+export function inkOf(mapId) {
+  return db.prepare('SELECT * FROM ink WHERE map_id = ? ORDER BY id').all(mapId)
+    .map((s) => ({ ...s, points: JSON.parse(s.points) }));
+}
+
 export function getMap(mapId) {
   return db.prepare('SELECT * FROM maps WHERE id = ?').get(mapId);
 }

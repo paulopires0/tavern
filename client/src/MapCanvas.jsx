@@ -25,8 +25,11 @@ import { strokeSegments, cliffNormal } from '../../shared/geometry.js';
 //   notes        DM annotations [{id, x, y, text, open, box_dx, box_dy}] (DM views only)
 //   guide        in-progress polyline {kind, points:[[x,y]…], close} | null (editor)
 //   selectedKeys Set of tokenKey
-//   paint        null | {kind: wall|sight|cliff, tool: brush|line|rect, width: px}
-//   onStroke({kind, tool, points, width})
+//   ink          DM drawing everyone sees [{id, tool, points, color, width}]
+//   paint        null | {kind: wall|sight|cliff|ink, tool: brush|line|rect|eraser,
+//                        width: px, color: css (ink only)}
+//   onStroke({kind, tool, points, width, color})
+//   onErase(points, radius)  — an eraser drag, in image px
 //   onTokenClick(token, shiftKey)
 //   onTokensMove([{token, x, y}]) — the dragged token's move comes FIRST
 //   onNoteToggle(note)   click an open card or its pin: fold/unfold
@@ -92,9 +95,9 @@ function visibleRegion(vb, map) {
 }
 
 export default function MapCanvas({
-  map, strokes = [], fogGrid = null, tokens = [], objects = [], rings = [],
+  map, strokes = [], ink = [], fogGrid = null, tokens = [], objects = [], rings = [],
   notes = [], guide = null, frameBox = null, selectedKeys = null, paint = null,
-  onStroke, onTokenClick, onTokensMove, onNoteToggle, onNoteMove, onCanvasClick,
+  onStroke, onErase, onTokenClick, onTokensMove, onNoteToggle, onNoteMove, onCanvasClick,
 }) {
   const wrapRef = useRef(null);
   const svgRef = useRef(null);
@@ -329,6 +332,11 @@ export default function MapCanvas({
     if (ev.button === 2) return;
     svgRef.current.setPointerCapture(ev.pointerId);
     const p = toSvg(ev);
+    if (paint?.tool === 'eraser' && onErase) {
+      gestureRef.current = { type: 'erase', points: [[p.x, p.y]], last: p };
+      setPreview({ ...paint, points: [[p.x, p.y]] });
+      return;
+    }
     if (paint && onStroke) {
       gestureRef.current = { type: 'paint', points: [[p.x, p.y]], last: p };
       setPreview({ ...paint, tool: paint.tool, points: [[p.x, p.y]] });
@@ -340,6 +348,7 @@ export default function MapCanvas({
   }
 
   function onTokenPointerDown(t, ev) {
+    if (paint) return; // drawing: let the stroke run over tokens instead of grabbing them
     if (!(t.draggable || onTokenClick)) return;
     ev.stopPropagation();
     svgRef.current.setPointerCapture(ev.pointerId);
@@ -349,6 +358,7 @@ export default function MapCanvas({
   // Open note cards drag freely (even off the map art, onto the table); a
   // click without movement folds them instead.
   function onNotePointerDown(n, base, ev) {
+    if (paint) return; // ditto: notes don't catch the brush
     ev.stopPropagation();
     svgRef.current.setPointerCapture(ev.pointerId);
     gestureRef.current = { type: 'note', note: n, base, p0: toSvg(ev), moved: false };
@@ -374,6 +384,13 @@ export default function MapCanvas({
       const p = toSvg(ev);
       if (Math.hypot(p.x - g.p0.x, p.y - g.p0.y) > 5) g.moved = true;
       if (g.moved) setNoteDrag({ id: g.note.id, dx: p.x - g.p0.x, dy: p.y - g.p0.y });
+    } else if (g.type === 'erase') {
+      const p = toSvg(ev);
+      if (Math.hypot(p.x - g.last.x, p.y - g.last.y) > Math.max(3, paint.width / 3)) {
+        g.points.push([p.x, p.y]);
+        g.last = p;
+        setPreview({ ...paint, points: [...g.points] });
+      }
     } else if (g.type === 'paint') {
       const p = toSvg(ev);
       if (paint.tool === 'brush') {
@@ -424,17 +441,47 @@ export default function MapCanvas({
       onTokensMove(group.map((t) => ({ token: t, x: t.x + dx, y: t.y + dy })));
       return;
     }
+    if (g.type === 'erase') {
+      onErase?.(g.points, paint.width / 2); // a tap erases too: one point is enough
+      return;
+    }
     if (g.type === 'paint') {
       const pts = g.points;
       const long = pts.length > 1 &&
         Math.hypot(pts[pts.length - 1][0] - pts[0][0], pts[pts.length - 1][1] - pts[0][1]) > 3;
       if (paint.tool === 'brush' ? pts.length >= 2 : long) {
-        onStroke({ kind: paint.kind, tool: paint.tool, points: pts, width: paint.width });
+        onStroke({
+          kind: paint.kind, tool: paint.tool, points: pts, width: paint.width, color: paint.color,
+        });
       }
     }
   }
 
 
+
+  // --- the DM's ink -----------------------------------------------------------------
+  // Plain coloured lines in map coordinates, so they sit on the art and travel
+  // with it. Rects draw as outlines, everything else as a polyline.
+  function renderInk(s, keyName) {
+    const common = {
+      fill: 'none', stroke: s.color || '#e4b343', strokeWidth: s.width,
+      strokeLinecap: 'round', strokeLinejoin: 'round',
+    };
+    if (s.tool === 'rect' && s.points.length >= 2) {
+      const [a, b] = [s.points[0], s.points[s.points.length - 1]];
+      return <rect key={keyName} pointerEvents="none"
+        x={Math.min(a[0], b[0])} y={Math.min(a[1], b[1])}
+        width={Math.abs(b[0] - a[0])} height={Math.abs(b[1] - a[1])} {...common} />;
+    }
+    const pts = s.tool === 'line' && s.points.length >= 2
+      ? [s.points[0], s.points[s.points.length - 1]] : s.points;
+    if (pts.length === 1) { // a dot: a zero-length line still marks the spot
+      return <circle key={keyName} pointerEvents="none" cx={pts[0][0]} cy={pts[0][1]}
+        r={s.width / 2} fill={s.color || '#e4b343'} />;
+    }
+    return <path key={keyName} pointerEvents="none"
+      d={'M' + pts.map(([x, y]) => `${x},${y}`).join('L')} {...common} />;
+  }
 
   // --- painted strokes ------------------------------------------------------------
   function renderStroke(s, keyName) {
@@ -545,7 +592,22 @@ export default function MapCanvas({
           )}
 
           {strokeLayer}
-          {preview && renderStroke({ ...preview, id: 'preview', flipped: 0 }, 'preview')}
+          {ink.map((s) => renderInk(s, `ink${s.id}`))}
+          {preview && (preview.tool === 'eraser'
+            // the rubber shows where it is about to bite
+            ? (
+              <g pointerEvents="none">
+                <path d={'M' + preview.points.map(([x, y]) => `${x},${y}`).join('L')}
+                  fill="none" stroke="#fff" strokeOpacity={0.35} strokeWidth={preview.width}
+                  strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx={preview.points[preview.points.length - 1][0]}
+                  cy={preview.points[preview.points.length - 1][1]} r={preview.width / 2}
+                  fill="none" stroke="#fff" strokeWidth={Math.max(1, preview.width / 12)} />
+              </g>
+            )
+            : preview.kind === 'ink'
+              ? renderInk({ ...preview, id: 'preview' }, 'preview')
+              : renderStroke({ ...preview, id: 'preview', flipped: 0 }, 'preview'))}
 
           {guide && guide.points.length > 0 && (() => {
             const col = (STROKE_STYLE[guide.kind] || STROKE_STYLE.wall).stroke;

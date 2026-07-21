@@ -8,7 +8,7 @@
 //                 player, active map pointer + music for everyone)
 //   'state:map' — detail of one map, sent to sockets watching that map
 //                 (DM sees everything; TV gets fog-filtered tokens)
-import { db, getConfig, parseChar, parseMonster, parseItem, inventoryOf, strokesOf, getMap } from './db.js';
+import { db, getConfig, parseChar, parseMonster, parseItem, inventoryOf, strokesOf, inkOf, getMap } from './db.js';
 import { getGridMap, cellKey } from './grid.js';
 import { partyFog, fogStateOf } from './fog.js';
 import { wasTeleport, movePathOf } from './moveFlags.js';
@@ -208,6 +208,7 @@ export function dmMapPayload(mapId) {
     return {
       ...baseMapPayload(map),
       strokes: strokesOf(mapId),
+      ink: inkOf(mapId),
       characters: worldTokens(map),
       monsters: [], chests: [], shops: [], npcs: [],
       annotations,
@@ -216,6 +217,7 @@ export function dmMapPayload(mapId) {
   return {
     ...baseMapPayload(map),
     strokes: strokesOf(mapId),
+    ink: inkOf(mapId),
     characters: db.prepare('SELECT * FROM characters WHERE map_id = ?').all(mapId).map(parseChar),
     monsters: db.prepare('SELECT * FROM monsters WHERE map_id = ?').all(mapId).map(parseMonster),
     chests: db.prepare('SELECT * FROM chests WHERE map_id = ?').all(mapId),
@@ -242,7 +244,7 @@ export function tvMapPayload(mapId) {
       }
     }
     return {
-      mapId: map.id, map: { ...map }, fogGrid,
+      mapId: map.id, map: { ...map }, fogGrid, ink: inkOf(mapId),
       characters: worldTokens(map), monsters: [], chests: [], connections: [],
     };
   }
@@ -263,19 +265,18 @@ export function tvMapPayload(mapId) {
     .all(mapId)
     .filter((n) => n.x != null && cellStateAt(n.x, n.y) === 2) // people move: live info only
     .map((n) => ({ ...n, teleport: wasTeleport('npc', n.id), path: movePathOf('npc', n.id) }));
-  const chests = db.prepare('SELECT id, x, y, state, icon, discovered, hidden FROM chests WHERE map_id = ?')
-    .all(mapId)
-    .filter((c) => !c.hidden && (map.reveal_vision
-      ? cellStateAt(c.x, c.y) === 2
-      : (c.discovered && cellStateAt(c.x, c.y) >= 1))); // memory keeps discovered chests visible
   const characters = db.prepare('SELECT id, name, x, y, token_color, token, token_scale, token_shape, hp, max_hp FROM characters WHERE map_id = ?')
     .all(mapId)
     .map((c) => ({ ...c, teleport: wasTeleport('character', c.id), path: movePathOf('character', c.id) }));
   const shops = db.prepare('SELECT id, name, icon, x, y FROM shops WHERE map_id = ?')
     .all(mapId)
     .filter((s2) => s2.x != null && cellStateAt(s2.x, s2.y) >= 1); // buildings: remembered once seen
-  // doors are DM knowledge: the party never sees them marked
-  return { ...baseMapPayload(map), connections: [], fogGrid, characters, monsters, npcs, chests, shops };
+  // Doors are DM knowledge; chests are too — an icon on the big screen would
+  // announce hidden loot before the party has found anything. Neither is sent.
+  return {
+    ...baseMapPayload(map), connections: [], chests: [], fogGrid, ink: inkOf(mapId),
+    characters, monsters, npcs, shops,
+  };
 }
 
 // A player's phone shows no tactical map (README assumption) but we still

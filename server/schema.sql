@@ -133,6 +133,20 @@ CREATE TABLE IF NOT EXISTS strokes (
   flipped INTEGER NOT NULL DEFAULT 0
 );
 
+-- The DM's ink: freehand drawing over the map that EVERYONE sees (TV and
+-- players included) — circling an ambush, sketching a barricade, marking a
+-- route. Unlike `strokes` this is pure decoration: it blocks nothing and is
+-- never consulted by sight or movement. Coordinates are image px, so ink pans
+-- and zooms with the art it was drawn on.
+CREATE TABLE IF NOT EXISTS ink (
+  id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  map_id INTEGER NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+  tool   TEXT NOT NULL DEFAULT 'brush',
+  points TEXT NOT NULL,
+  color  TEXT NOT NULL DEFAULT '#e4b343',
+  width  REAL NOT NULL DEFAULT 6
+);
+
 -- The DM's private sticky notes, pinned to a map point. Rendered as callout
 -- boxes (open) or small pins (folded) on DM views only — never sent to the
 -- TV or players. box_dx/box_dy = where the DM dragged the callout box,

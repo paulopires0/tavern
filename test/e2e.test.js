@@ -190,6 +190,55 @@ test('e2e', async (t) => {
     assert.equal(dmMap.annotations.length, 0);
   });
 
+  await t.test('DM ink: drawn on the map, seen by everyone, erased in parts', async () => {
+    const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
+    cleanup.push(tv);
+    await tv.next('state:map');
+
+    const stroke = await api('POST', '/api/dm/ink', {
+      mapId: mapA, tool: 'brush', color: '#d34b3f', width: 12,
+      points: [[100, 100], [400, 100]],
+    });
+    assert.equal(stroke.ok, true);
+
+    // unlike private notes, ink DOES reach the party screen
+    let push = await tv.latest('state:map');
+    assert.equal(push.ink.length, 1, 'the TV sees the DM ink');
+    assert.equal(push.ink[0].color, '#d34b3f');
+    assert.deepEqual(push.ink[0].points, [[100, 100], [400, 100]]);
+    assert.ok(!('ink' in push) || Array.isArray(push.ink));
+
+    // rub the middle out: one line becomes two
+    await api('POST', `/api/dm/maps/${mapA}/ink-erase`, { points: [[250, 100]], radius: 30 });
+    push = await tv.latest('state:map');
+    assert.equal(push.ink.length, 2, 'erasing the middle splits the stroke');
+
+    // undo takes back the most recent stroke (one of the two halves)
+    await api('POST', `/api/dm/maps/${mapA}/ink-undo`);
+    push = await tv.latest('state:map');
+    assert.equal(push.ink.length, 1, 'undo removes the newest stroke');
+
+    // ink is decoration: it never blocks sight (hero still sees his own cell)
+    assert.equal(push.fogGrid['5,30'], 2, 'ink does not touch the fog');
+
+    await api('DELETE', `/api/dm/maps/${mapA}/ink`);
+    push = await tv.latest('state:map');
+    assert.equal(push.ink.length, 0, 'clear wipes the map');
+  });
+
+  await t.test('chests never appear on the party screen', async () => {
+    // put a chest right where the hero stands (100,600) and give the party full
+    // vision, so under any old "show discovered/visible chests" rule it WOULD
+    // be sent — the TV payload must still omit it.
+    await api('POST', '/api/dm/chests', { mapId: mapA, x: 100, y: 600 });
+    await api('POST', `/api/dm/maps/${mapA}/reveal`, { vision: true });
+    const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
+    cleanup.push(tv);
+    const push = await tv.latest('state:map');
+    assert.ok(!(push.chests || []).length, 'no chest icons betray loot on the TV');
+    await api('POST', `/api/dm/maps/${mapA}/reveal`, { vision: false }); // restore for later tests
+  });
+
   await t.test('reset-fog wipes the party memory of a map', async () => {
     const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
     cleanup.push(tv);

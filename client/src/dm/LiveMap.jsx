@@ -4,10 +4,13 @@ import ChestDialog from './ChestDialog.jsx';
 import TradeDialog from './TradeDialog.jsx';
 import MapGraph from './MapGraph.jsx';
 import JourneyPlanner from './JourneyPlanner.jsx';
+import PaintBar from './PaintBar.jsx';
 import { upload } from '../api.js';
 import { NumField } from '../fields.jsx';
 import { CropInput } from '../ImageCropper.jsx';
-import { WEATHERS } from '../../../shared/gameRules.js';
+import {
+  WEATHERS, INK_DEFAULT_COLOR, INK_DEFAULT_WIDTH_M, INK_ERASER_M,
+} from '../../../shared/gameRules.js';
 import { journeyIsLive } from '../journey.js';
 
 // The DM's table: drag tokens (shift-click selects several and they move
@@ -23,6 +26,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
   const [graphOpen, setGraphOpen] = useState(false);
   const [travelPath, setTravelPath] = useState(null); // kingdom "simulate travel" drawing
   const [journeyPlan, setJourneyPlan] = useState(null); // flagged door: draw the road first
+  const [paint, setPaint] = useState(null); // drawing over the map: null = off
 
   const worldMapObj = global.maps.find((m) => m.is_world);
 
@@ -183,28 +187,57 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
     }
   }
 
+  // Ink thickness is chosen in METRES and converted with this map's ruler, so
+  // the same brush reads the same on a cellar and on the kingdom. The rubber is
+  // deliberately fatter than the pen — you rub things out with a broad sweep.
+  const inkPxPerM = map?.scale || 20;
+  const inkWidthM = paint?.widthM ?? INK_DEFAULT_WIDTH_M;
+  const paintProps = paint && {
+    kind: 'ink',
+    tool: paint.tool || 'brush',
+    color: paint.color || INK_DEFAULT_COLOR,
+    width: inkPxPerM * (paint.tool === 'eraser'
+      ? Math.max(inkWidthM * 2, INK_ERASER_M) : inkWidthM),
+  };
+
   const offMapChars = global.characters.filter((c) => c.map_id !== viewMapId);
   const mapTracks = global.tracks.filter((t) => t.map_id === viewMapId);
   const music = global.music;
 
   return (
     <div className="livemap">
-      <div className={`map-pane ${placing ? 'placing' : ''}`}>
+      <div className={`map-pane ${placing ? 'placing' : ''} ${paint ? 'painting' : ''}`}>
         <MapCanvas
           map={map}
           strokes={detail?.strokes || []}
+          ink={detail?.ink || []}
           tokens={tokens}
           objects={objects}
           rings={rings}
           notes={detail?.annotations || []}
           guide={travelPath ? { kind: 'sight', points: travelPath, close: false } : null}
           selectedKeys={selected}
+          paint={paintProps}
+          onStroke={(s) => act('POST', '/api/dm/ink', {
+            mapId: viewMapId, tool: s.tool, points: s.points, color: s.color, width: s.width,
+          })}
+          onErase={(points, radius) =>
+            act('POST', `/api/dm/maps/${viewMapId}/ink-erase`, { points, radius })}
           onTokenClick={onTokenClick}
           onTokensMove={isWorld ? null : onTokensMove}
           onNoteToggle={(n) => act('PATCH', `/api/dm/annotations/${n.id}`, { open: n.open ? 0 : 1 })}
           onNoteMove={(n, off) => act('PATCH', `/api/dm/annotations/${n.id}`, off)}
           onCanvasClick={onCanvasClick}
         />
+        {map && (
+          <PaintBar
+            paint={paint}
+            setPaint={setPaint}
+            hasInk={(detail?.ink || []).length > 0}
+            onUndo={() => act('POST', `/api/dm/maps/${viewMapId}/ink-undo`)}
+            onClear={() => act('DELETE', `/api/dm/maps/${viewMapId}/ink`)}
+          />
+        )}
         {placing && (
           <div className="placing-hint">
             Click the map to place {placing.name || 'token'}

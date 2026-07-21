@@ -6,7 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { db, getConfig, setConfig, parseChar, parseItem, inventoryOf, addToInventory, removeFromInventory, carriedWeight, strokesOf, getMap } from './db.js';
+import { db, getConfig, setConfig, parseChar, parseItem, inventoryOf, addToInventory, removeFromInventory, carriedWeight, strokesOf, inkOf, getMap } from './db.js';
 import { getGridMap } from './grid.js';
 import { requireDM } from './auth.js';
 import { refreshFogFor, refreshFogForMap, revealAlongPath } from './fog.js';
@@ -15,7 +15,7 @@ import { retargetTVs } from './sockets.js';
 import { UPLOADS_DIR, UPLOAD_KINDS } from './config.js';
 import { defaultUrl } from './defaults.js';
 import { parseYoutubeId } from './youtube.js';
-import { pointSegDist } from '../shared/geometry.js';
+import { rubStrokes } from '../shared/rubber.js';
 import { setMoveFlag } from './moveFlags.js';
 import { findPath } from './pathfind.js';
 import { revealWorldFor, revealWorldPath, worldMap } from './fog.js';
@@ -557,57 +557,78 @@ dmRouter.post('/world-journey', (req, res) => {
   ok(res, info);
 });
 
-// Rubber: erase only the parts of strokes the eraser path touches. Strokes
-// are resampled; surviving runs become new strokes (a rectangle you rub a
-// hole into becomes the remaining three-and-a-bit sides).
+// Rubber: erase only the parts of strokes the eraser path touched (see
+// shared/rubber.js) — the survivors come back as strokes of their own.
 dmRouter.post('/maps/:id/erase', (req, res) => {
   const mapId = Number(req.params.id);
   if (!getMap(mapId)) return bad(res, 'no such map');
-  const eraser = (req.body?.points || []).map(([x, y]) => ({ x: Number(x), y: Number(y) }));
-  const radius = Math.max(2, Number(req.body?.radius) || 10);
-  if (!eraser.length) return bad(res, 'points required');
-  const eraserSegs = eraser.length === 1
-    ? [[eraser[0], eraser[0]]]
-    : eraser.slice(1).map((p, i) => [eraser[i], p]);
+  if (!(req.body?.points || []).length) return bad(res, 'points required');
+  const rubbed = rubStrokes(strokesOf(mapId), req.body.points, Math.max(2, Number(req.body?.radius) || 10));
 
+  const byId = new Map(strokesOf(mapId).map((s) => [s.id, s]));
   const tx = db.transaction(() => {
-    for (const stroke of strokesOf(mapId)) {
-      // to polyline (rects become their outline)
-      let pts = stroke.points.map(([x, y]) => ({ x, y }));
-      if (stroke.tool === 'rect' && pts.length >= 2) {
-        const [a, c] = [pts[0], pts[pts.length - 1]];
-        pts = [a, { x: c.x, y: a.y }, c, { x: a.x, y: c.y }, a];
-      }
-      // resample finely, drop pieces the eraser covers
-      const cut = radius + stroke.width / 2;
-      const step = Math.max(4, stroke.width / 2);
-      const fine = [pts[0]];
-      for (let i = 1; i < pts.length; i++) {
-        const [a, b] = [pts[i - 1], pts[i]];
-        const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
-        for (let j = 1; j <= n; j++) fine.push({ x: a.x + (b.x - a.x) * j / n, y: a.y + (b.y - a.y) * j / n });
-      }
-      const hit = (p) => eraserSegs.some(([a, b]) => pointSegDist(p, a, b) < cut);
-      const runs = [];
-      let cur = [];
-      let touched = false;
-      for (const p of fine) {
-        if (hit(p)) { touched = true; if (cur.length > 1) runs.push(cur); cur = []; }
-        else cur.push(p);
-      }
-      if (cur.length > 1) runs.push(cur);
-      if (!touched) continue;
-      db.prepare('DELETE FROM strokes WHERE id = ?').run(stroke.id);
+    for (const { id, runs } of rubbed) {
+      const stroke = byId.get(id);
+      db.prepare('DELETE FROM strokes WHERE id = ?').run(id);
       for (const run of runs) {
         db.prepare('INSERT INTO strokes (map_id, kind, tool, points, width, flipped) VALUES (?,?,?,?,?,?)')
-          .run(mapId, stroke.kind, 'brush',
-            JSON.stringify(run.map((p) => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10])),
-            stroke.width, stroke.flipped);
+          .run(mapId, stroke.kind, 'brush', JSON.stringify(run), stroke.width, stroke.flipped);
       }
     }
   });
   tx();
   refreshFogForMap(mapId);
+  ok(res);
+});
+
+// ---------------------------------------------------------------------------
+// Ink: the DM draws over the map and everyone sees it. Decoration only — ink
+// blocks nothing, so unlike physics strokes it never touches the fog.
+// ---------------------------------------------------------------------------
+dmRouter.post('/ink', (req, res) => {
+  const b = req.body || {};
+  if (!getMap(Number(b.mapId))) return bad(res, 'no such map');
+  if (!Array.isArray(b.points) || b.points.length < 1) return bad(res, 'points required');
+  const points = b.points.map(([x, y]) => [Number(x), Number(y)]);
+  const info = db.prepare('INSERT INTO ink (map_id, tool, points, color, width) VALUES (?,?,?,?,?)')
+    .run(Number(b.mapId), ['brush', 'line', 'rect'].includes(b.tool) ? b.tool : 'brush',
+      JSON.stringify(points), String(b.color || '#e4b343').slice(0, 24),
+      Math.min(400, Math.max(1, Number(b.width) || 6)));
+  ok(res, { id: info.lastInsertRowid });
+});
+
+// Same rubber as the editor's, over ink instead of physics.
+dmRouter.post('/maps/:id/ink-erase', (req, res) => {
+  const mapId = Number(req.params.id);
+  if (!getMap(mapId)) return bad(res, 'no such map');
+  if (!(req.body?.points || []).length) return bad(res, 'points required');
+  const all = inkOf(mapId);
+  const rubbed = rubStrokes(all, req.body.points, Math.max(2, Number(req.body?.radius) || 12));
+
+  const byId = new Map(all.map((s) => [s.id, s]));
+  const tx = db.transaction(() => {
+    for (const { id, runs } of rubbed) {
+      const stroke = byId.get(id);
+      db.prepare('DELETE FROM ink WHERE id = ?').run(id);
+      for (const run of runs) {
+        db.prepare('INSERT INTO ink (map_id, tool, points, color, width) VALUES (?,?,?,?,?)')
+          .run(mapId, 'brush', JSON.stringify(run), stroke.color, stroke.width);
+      }
+    }
+  });
+  tx();
+  ok(res);
+});
+
+// Undo takes back the newest stroke on this map, like Ctrl-Z.
+dmRouter.post('/maps/:id/ink-undo', (req, res) => {
+  const row = db.prepare('SELECT id FROM ink WHERE map_id = ? ORDER BY id DESC LIMIT 1').get(Number(req.params.id));
+  if (row) db.prepare('DELETE FROM ink WHERE id = ?').run(row.id);
+  ok(res);
+});
+
+dmRouter.delete('/maps/:id/ink', (req, res) => {
+  db.prepare('DELETE FROM ink WHERE map_id = ?').run(Number(req.params.id));
   ok(res);
 });
 
