@@ -3,6 +3,7 @@ import MapCanvas from '../MapCanvas.jsx';
 import ChestDialog from './ChestDialog.jsx';
 import TradeDialog from './TradeDialog.jsx';
 import MapGraph from './MapGraph.jsx';
+import JourneyPlanner from './JourneyPlanner.jsx';
 import { upload } from '../api.js';
 import { NumField } from '../fields.jsx';
 import { CropInput } from '../ImageCropper.jsx';
@@ -20,6 +21,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
   const [templateId, setTemplateId] = useState('');
   const [graphOpen, setGraphOpen] = useState(false);
   const [travelPath, setTravelPath] = useState(null); // kingdom "simulate travel" drawing
+  const [journeyPlan, setJourneyPlan] = useState(null); // flagged door: draw the road first
 
   const worldMapObj = global.maps.find((m) => m.is_world);
 
@@ -82,8 +84,9 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
       });
       if (!res) return;
       if (res.result === 'chest') setChestOpen({ chestId: res.chestId, characterId: token.id });
-      // a flagged door sends the TV to the kingdom for the journey — follow it
-      if (res.result === 'travelled' || res.result === 'world-travel') setViewMapId(res.mapId);
+      // a flagged door asks the DM to draw the road before anyone travels
+      if (res.result === 'world-journey-plan') setJourneyPlan(res);
+      else if (res.result === 'travelled') setViewMapId(res.mapId);
       return;
     }
     // moves[0] is the DRAGGED token (MapCanvas puts it first): its drop point
@@ -93,7 +96,8 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
       anchor: { mapId: viewMapId, x: dragged.x, y: dragged.y },
       moves: moves.map(({ token, x, y }) => ({ kind: token.kind, id: token.id, mapId: viewMapId, x, y })),
     });
-    if (res?.travelled) setViewMapId(res.mapId);
+    if (res?.journeyPlan) setJourneyPlan(res.journeyPlan);
+    else if (res?.travelled) setViewMapId(res.mapId);
     if (res?.blocked?.length) {
       alert(res.blocked.map((b) => `${b.kind} #${b.id}: ${b.error}`).join('\n'));
     }
@@ -509,6 +513,19 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
       )}
       {global.shopSession && (
         <TradeDialog session={global.shopSession} global={global} act={act} />
+      )}
+      {journeyPlan && (
+        <JourneyPlanner
+          plan={journeyPlan}
+          maps={global.maps}
+          act={act}
+          onStart={async (path) => {
+            const res = await act('POST', '/api/dm/world-journey', { ...journeyPlan, path });
+            setJourneyPlan(null);
+            if (res) { setSelected(new Set()); setViewMapId(journeyPlan.worldId); } // watch them go
+          }}
+          onClose={() => setJourneyPlan(null)}
+        />
       )}
       {graphOpen && (
         <MapGraph

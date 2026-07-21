@@ -521,6 +521,25 @@ dmRouter.post('/world-travel', (req, res) => {
   ok(res);
 });
 
+// Run a flagged-door journey along the road the DM just drew. The plan comes
+// from the move that landed on the door; `path` holds the corners between the
+// two towns (empty = a straight road).
+dmRouter.post('/world-journey', (req, res) => {
+  const b = req.body || {};
+  const from = getMap(Number(b.fromMapId));
+  const target = getGridMap(Number(b.toMapId));
+  if (!from || !target) return bad(res, 'bad map ids');
+  const charIds = (b.charIds || []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  if (!charIds.length) return bad(res, 'charIds required');
+  const drawn = (b.path || [])
+    .map((p) => [Number(p[0]), Number(p[1])])
+    .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  const info = startKingdomTravel(from, target, charIds,
+    Number(b.arriveX) || target.image_w / 2, Number(b.arriveY) || target.image_h / 2, drawn);
+  if (!info) return bad(res, 'the kingdom map or one of the map markers is missing');
+  ok(res, info);
+});
+
 // Rubber: erase only the parts of strokes the eraser path touches. Strokes
 // are resampled; surviving runs become new strokes (a rectangle you rub a
 // hole into becomes the remaining three-and-a-bit sides).
@@ -625,18 +644,28 @@ function nearby(table, mapId, x, y, radiusPx) {
     .find((o) => o.x != null && Math.hypot(o.x - x, o.y - y) <= radiusPx);
 }
 
-// A long-distance door: instead of hopping straight to the destination, put the
-// TV on the kingdom map, walk a marker from the origin's marker to the target's
-// (uncovering the route), and only AFTER the journey drop the party on the
-// destination map. The characters stay put until they "arrive". Returns the
-// journey descriptor, or null when the kingdom pieces aren't in place.
-function startKingdomTravel(fromMap, target, charIds, arriveX, arriveY) {
+// A long-distance journey across the kingdom: put the TV on the world map, walk
+// a marker along the road the DM drew (uncovering it), and only AFTER the trip
+// drop the party on the destination map. The characters stay put until they
+// "arrive". `drawn` are the DM's intermediate corners — the road is always
+// anchored to the two towns' markers. Returns the descriptor, or null when the
+// kingdom pieces aren't in place.
+function startKingdomTravel(fromMap, target, charIds, arriveX, arriveY, drawn = []) {
   const world = worldMap();
   if (!world || fromMap?.world_x == null || target?.world_x == null) return null;
-  const path = [[fromMap.world_x, fromMap.world_y], [target.world_x, target.world_y]];
-  revealWorldPath(path); // uncover the route as they set out
-  const lenPx = Math.hypot(target.world_x - fromMap.world_x, target.world_y - fromMap.world_y);
-  // slower than a normal-map walk (~2.2 px/ms, capped 2.6 s); scales with distance
+  const sameSpot = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < (world.cell_px || 8);
+  const path = [[fromMap.world_x, fromMap.world_y]];
+  for (const p of drawn) if (!sameSpot(p, path[path.length - 1])) path.push(p);
+  const dest = [target.world_x, target.world_y];
+  if (!sameSpot(dest, path[path.length - 1])) path.push(dest);
+
+  revealWorldPath(path); // uncover the road as they set out
+  let lenPx = 0;
+  for (let i = 1; i < path.length; i++) {
+    lenPx += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
+  }
+  // slower than a normal-map walk (~2.2 px/ms, capped 2.6 s); scales with the
+  // length of the ACTUAL road, so a winding detour takes longer
   const durationMs = Math.min(11000, Math.max(3000, Math.round(lenPx * 3.6)));
   const nonce = Date.now();
   setConfig('world_travel', { path, nonce, durationMs, arriveMapId: target.id });
@@ -698,15 +727,21 @@ function applyMove({ kind, id, mapId, x, y }, { triggers = true } = {}) {
   const door = nearby('connections', map.id, x, y, trigPx);
   if (door) {
     const target = getGridMap(door.target_map_id);
-    // A flagged door plays the kingdom journey: the character waits at the door
-    // on this map, the TV travels the world, and they arrive later.
+    // A flagged door means a kingdom journey — but the DM draws the road first.
+    // Nothing starts here: the character waits at the door and we hand back a
+    // PLAN for the DM's journey window (POST /world-journey runs it).
     if (target && kind === 'character' && door.world_travel) {
-      const info = startKingdomTravel(getMap(map.id), target, [tok.id], door.target_x, door.target_y);
-      if (info) {
+      const from = getMap(map.id);
+      const world = worldMap();
+      if (world && from?.world_x != null && target.world_x != null) {
         db.prepare(`UPDATE ${table} SET map_id = ?, x = ?, y = ? WHERE id = ?`).run(map.id, x, y, tok.id);
         setMoveFlag('character', tok.id, true);
         refreshFogFor(parseChar(db.prepare('SELECT * FROM characters WHERE id = ?').get(tok.id)));
-        return { result: 'world-travel', mapId: info.worldId, arriveMapId: info.arriveMapId, teleport: true };
+        return {
+          result: 'world-journey-plan', teleport: true,
+          worldId: world.id, fromMapId: from.id, toMapId: target.id,
+          arriveX: door.target_x, arriveY: door.target_y, charIds: [tok.id],
+        };
       }
     }
     if (target) {
@@ -765,12 +800,20 @@ dmRouter.post('/move-tokens', (req, res) => {
     if (door) {
       const target = getGridMap(door.target_map_id);
       const sourceMap = target ? getMap(map.id) : null;
-      // Flagged door: the whole party takes the kingdom journey together.
+      // Flagged door: the whole party journeys together — hand the DM a plan to
+      // draw the road (they stay at the door until it starts).
       if (target && door.world_travel) {
+        const world = worldMap();
         const charIds = moves.filter((m) => m.kind !== 'monster' && m.kind !== 'npc').map((m) => Number(m.id));
-        const info = startKingdomTravel(sourceMap, target, charIds.length ? charIds : moves.map((m) => Number(m.id)),
-          door.target_x, door.target_y);
-        if (info) return ok(res, { blocked: [], travelled: true, worldTravel: true, mapId: info.worldId });
+        if (world && sourceMap?.world_x != null && target.world_x != null && charIds.length) {
+          return ok(res, {
+            blocked: [],
+            journeyPlan: {
+              worldId: world.id, fromMapId: sourceMap.id, toMapId: target.id,
+              arriveX: door.target_x, arriveY: door.target_y, charIds,
+            },
+          });
+        }
       }
       if (target) {
         // Everyone lands together AT the arrival point, huddled in a knot a

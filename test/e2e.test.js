@@ -787,23 +787,41 @@ test('e2e', async (t) => {
       ((l.map_id === mapA && l.target_map_id === mapB) || (l.map_id === mapB && l.target_map_id === mapA))
       && l.world_travel), 'the door pair is flagged in the graph data');
 
-    // drop the hero on the flagged door: it starts a journey, not an instant hop
+    // dropping on the flagged door does NOT travel — it hands back a plan so the
+    // DM can draw the road first; nothing on the TV has changed yet
     await api('POST', '/api/dm/move-token', { kind: 'character', id: hero, mapId: mapA, x: 100, y: 100 });
-    const res = await api('POST', '/api/dm/move-token', { kind: 'character', id: hero, mapId: mapA, x: 510, y: 505 });
-    assert.equal(res.result, 'world-travel', 'a flagged door plays the journey');
-    assert.equal(res.mapId, world.id, 'the view follows to the kingdom map');
+    const activeBefore = getConfig('active_map_id', null);
+    const cueBefore = getConfig('world_travel', null)?.nonce ?? null;
+    const plan = await api('POST', '/api/dm/move-token', { kind: 'character', id: hero, mapId: mapA, x: 510, y: 505 });
+    assert.equal(plan.result, 'world-journey-plan', 'a flagged door asks the DM to draw the road');
+    assert.deepEqual([plan.fromMapId, plan.toMapId, plan.worldId], [mapA, mapB, world.id]);
+    assert.deepEqual(plan.charIds, [hero]);
+    assert.equal(getConfig('active_map_id', null), activeBefore, 'nothing travels until the DM says go');
+    assert.equal(getConfig('world_travel', null)?.nonce ?? null, cueBefore, 'no new journey cue yet');
+
+    // the DM draws a road that detours north, then starts it
+    const res = await api('POST', '/api/dm/world-journey', { ...plan, path: [[500, 100]] });
+    assert.equal(res.ok, true);
 
     const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
     cleanup.push(tv);
     const g = await tv.latest('state');
     assert.equal(g.activeMapId, world.id, 'the kingdom is on the TV during the trip');
     assert.ok(g.worldTravel?.nonce, 'the TV has a journey cue');
+    assert.deepEqual(g.worldTravel.path, [[200, 500], [500, 100], [800, 500]],
+      'the road runs town → the drawn corner → town');
     assert.ok(g.worldTravel.durationMs >= 3000, 'the journey is paced (slower than a normal walk)');
     assert.equal(g.worldTravel.arriveMapId, mapB, 'it will arrive at the destination city');
+    // the detour is longer than the straight line, so it takes longer than the floor
+    assert.ok(g.worldTravel.durationMs > 3000, 'a winding road takes longer than a straight one');
 
     // the hero has NOT arrived yet — he waits at the door on mapA
     const dmMapA = await connectAsDmMap(mapA);
     assert.ok(dmMapA.characters.some((c) => c.id === hero), 'hero waits at the door until he arrives');
+
+    // the drawn road itself is uncovered on the kingdom map (cell near 500,100)
+    const push = await tv.latest('state:map');
+    assert.equal(push.fogGrid['31,6'], 2, 'the detour corner is revealed, not just the straight line');
   });
 });
 
