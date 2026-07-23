@@ -44,7 +44,7 @@ ensureColumns('items', {
   damage: 'TEXT', range: 'REAL', armor: 'INTEGER', lore_text: 'TEXT', image: 'TEXT',
 });
 ensureColumns('monsters', { art: 'TEXT', x: 'REAL', y: 'REAL', token_scale: 'REAL NOT NULL DEFAULT 1', token_shape: "TEXT NOT NULL DEFAULT 'free'" });
-ensureColumns('npcs', { token: 'TEXT', x: 'REAL', y: 'REAL', token_scale: 'REAL NOT NULL DEFAULT 1', token_shape: "TEXT NOT NULL DEFAULT 'free'" });
+ensureColumns('npcs', { token: 'TEXT', x: 'REAL', y: 'REAL', token_scale: 'REAL NOT NULL DEFAULT 1', token_shape: "TEXT NOT NULL DEFAULT 'free'", show_name: 'INTEGER NOT NULL DEFAULT 0' });
 ensureColumns('chests', { icon: 'TEXT', x: 'REAL', y: 'REAL', hidden: 'INTEGER NOT NULL DEFAULT 0' });
 ensureColumns('shops', { category: "TEXT NOT NULL DEFAULT 'general'", x: 'REAL', y: 'REAL' });
 ensureColumns('connections', {

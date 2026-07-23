@@ -164,7 +164,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
     shape: m.token_shape, draggable: true, sub: `${m.hp}/${m.max_hp}`,
   }))).concat(npcs.map((n) => ({
     tokenKey: `n${n.id}`, kind: 'npc', id: n.id, x: n.x, y: n.y,
-    color: '#8a7452', label: n.name, icon: n.token, scale: n.token_scale,
+    color: '#8a7452', label: n.show_name ? n.name : null, icon: n.token, scale: n.token_scale,
     shape: n.token_shape, draggable: true,
   })));
 
@@ -525,6 +525,11 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
               <NumField label="Token size ×" value={singleNpc.token_scale} step={0.1}
                 onSave={(v) => act('PATCH', `/api/dm/npcs/${singleNpc.id}`, { token_scale: Math.max(0.2, v || 1) })} />
             </div>
+            <label className="row small">
+              <input type="checkbox" checked={!!singleNpc.show_name}
+                onChange={(e) => act('PATCH', `/api/dm/npcs/${singleNpc.id}`, { show_name: e.target.checked })} />
+              Show name on the map (everyone) — hidden by default
+            </label>
             <div className="row">
               <button onClick={() => act('POST', '/api/dm/unplace', { kind: 'npc', id: singleNpc.id })}>Remove from map</button>
             </div>

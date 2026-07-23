@@ -1296,11 +1296,12 @@ dmRouter.patch('/npcs/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM npcs WHERE id = ?').get(Number(req.params.id));
   if (!row) return bad(res, 'no such npc');
   const b = req.body || {};
-  db.prepare('UPDATE npcs SET name=?, description=?, portrait=?, token=?, map_id=?, x=?, y=?, token_scale=?, token_shape=?, notes=? WHERE id=?')
+  db.prepare('UPDATE npcs SET name=?, description=?, portrait=?, token=?, map_id=?, x=?, y=?, token_scale=?, token_shape=?, show_name=?, notes=? WHERE id=?')
     .run(b.name ?? row.name, b.description ?? row.description, b.portrait ?? row.portrait,
       b.token ?? row.token,
       'map_id' in b ? b.map_id : row.map_id, 'x' in b ? b.x : row.x, 'y' in b ? b.y : row.y,
       b.token_scale ?? row.token_scale, b.token_shape ?? row.token_shape,
+      'show_name' in b ? (b.show_name ? 1 : 0) : row.show_name,
       b.notes ?? row.notes, row.id);
   ok(res);
 });

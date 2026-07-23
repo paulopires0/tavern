@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS npcs (
   y           REAL,
   token_scale REAL NOT NULL DEFAULT 1,
   token_shape TEXT NOT NULL DEFAULT 'free',
+  show_name   INTEGER NOT NULL DEFAULT 0,         -- name on the map? default hidden
   notes       TEXT NOT NULL DEFAULT ''            -- DM only
 );
 

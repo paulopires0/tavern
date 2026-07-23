@@ -261,7 +261,7 @@ export function tvMapPayload(mapId) {
     .all(mapId)
     .filter((m) => m.x != null && cellStateAt(m.x, m.y) === 2) // live info only; names always shown
     .map((m) => ({ ...m, teleport: wasTeleport('monster', m.id), path: movePathOf('monster', m.id) }));
-  const npcs = db.prepare('SELECT id, name, token, x, y, token_scale, token_shape FROM npcs WHERE map_id = ?')
+  const npcs = db.prepare('SELECT id, name, token, x, y, token_scale, token_shape, show_name FROM npcs WHERE map_id = ?')
     .all(mapId)
     .filter((n) => n.x != null && cellStateAt(n.x, n.y) === 2) // people move: live info only
     .map((n) => ({ ...n, teleport: wasTeleport('npc', n.id), path: movePathOf('npc', n.id) }));

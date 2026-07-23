@@ -161,7 +161,7 @@ export default function TVView({ tvKey }) {
     shape: m.token_shape, animate: !m.teleport, path: m.path, draggable: false,
   }))).concat((mapDetail.npcs || []).map((n) => ({
     tokenKey: `n${n.id}`, kind: 'npc', id: n.id, x: n.x, y: n.y,
-    color: '#8a7452', label: n.name, icon: n.token, scale: n.token_scale,
+    color: '#8a7452', label: n.show_name ? n.name : null, icon: n.token, scale: n.token_scale,
     shape: n.token_shape, animate: !n.teleport, path: n.path, draggable: false,
   })));
 

@@ -453,6 +453,15 @@ test('e2e', async (t) => {
     const seenTom = (push.npcs || []).find((x) => x.id === npc);
     assert.ok(seenTom, 'NPC next to the party appears on the TV');
     assert.equal(seenTom.name, 'Old Tom');
+    assert.ok(!seenTom.show_name, 'an NPC name is hidden by default');
+
+    // reveal the name: the flag flips (the client shows the label off it)
+    await api('PATCH', `/api/dm/npcs/${npc}`, { show_name: true });
+    push = await tv.latest('state:map');
+    assert.ok((push.npcs || []).find((x) => x.id === npc)?.show_name, 'DM can reveal the name');
+    await api('PATCH', `/api/dm/npcs/${npc}`, { show_name: false });
+    push = await tv.latest('state:map');
+    assert.ok(!(push.npcs || []).find((x) => x.id === npc)?.show_name, 'and hide it again');
 
     await api('POST', '/api/dm/unplace', { kind: 'npc', id: npc });
     const after = await connectAsDmMap(mapB);
