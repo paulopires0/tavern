@@ -1,9 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pointSegDist, segIntersect, segSegDist, strokeSegments, blocksSight, moveBlocked, cliffNormal } from '../shared/geometry.js';
+import { pointSegDist, segIntersect, segSegDist, strokeSegments, blocksSight, moveBlocked, cliffNormal, polylineLength } from '../shared/geometry.js';
 import { visibleCells } from '../server/vision.js';
 
 const P = (x, y) => ({ x, y });
+
+test('polylineLength sums the legs (the ruler measures a path)', () => {
+  assert.equal(polylineLength([]), 0, 'nothing to measure');
+  assert.equal(polylineLength([[5, 5]]), 0, 'a single point has no length');
+  assert.equal(polylineLength([[0, 0], [30, 40]]), 50, '3-4-5 triangle leg');
+  assert.equal(polylineLength([[0, 0], [30, 40], [30, 0]]), 90, 'two legs add up');
+  // divide by a map's scale (px/m) to get metres
+  assert.equal(polylineLength([[0, 0], [100, 0]]) / 20, 5, '100 px at 20 px/m = 5 m');
+});
 
 test('pointSegDist basics', () => {
   assert.equal(pointSegDist(P(0, 5), P(-10, 0), P(10, 0)), 5);

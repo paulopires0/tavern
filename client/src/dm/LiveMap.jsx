@@ -12,6 +12,7 @@ import {
   WEATHERS, INK_DEFAULT_COLOR, INK_DEFAULT_WIDTH_M, INK_ERASER_M,
 } from '../../../shared/gameRules.js';
 import { journeyIsLive } from '../journey.js';
+import { polylineLength } from '../../../shared/geometry.js';
 
 // The DM's table: drag tokens (shift-click selects several and they move
 // together), walls/cliffs enforce themselves, doors teleport, weapon ranges
@@ -27,10 +28,11 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
   const [travelPath, setTravelPath] = useState(null); // kingdom "simulate travel" drawing
   const [journeyPlan, setJourneyPlan] = useState(null); // flagged door: draw the road first
   const [paint, setPaint] = useState(null); // drawing over the map: null = off
+  const [rulerPath, setRulerPath] = useState(null); // measuring: null = off, [] = on
 
   const worldMapObj = global.maps.find((m) => m.is_world);
 
-  useEffect(() => { setTravelPath(null); }, [viewMapId]); // don't carry a half-drawn route between maps
+  useEffect(() => { setTravelPath(null); setRulerPath(null); }, [viewMapId]); // don't carry a half-drawn route/measure between maps
 
   // When a kingdom JOURNEY (flagged door) finishes, follow the party to the
   // destination city here in Live too — the TV already switched.
@@ -118,6 +120,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
   }
 
   async function onCanvasClick(x, y) {
+    if (rulerPath) { setRulerPath((p) => [...p, [x, y]]); return; } // measuring a distance
     if (travelPath) { setTravelPath((p) => [...p, [x, y]]); return; } // drawing a kingdom journey
     if (!placing) { setSelected(new Set()); return; }
     if (placing.kind === 'note') {
@@ -200,13 +203,21 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
       ? Math.max(inkWidthM * 2, INK_ERASER_M) : inkWidthM),
   };
 
+  // The ruler: distance of the committed path (the on-map readout also adds the
+  // live segment out to the cursor). Turning it on parks the other map tools.
+  const rulerMeters = rulerPath && map ? polylineLength(rulerPath) / (map.scale || 1) : 0;
+  const toggleRuler = () => {
+    if (rulerPath) { setRulerPath(null); return; }
+    setRulerPath([]); setPaint(null); setPlacing(null); setTravelPath(null);
+  };
+
   const offMapChars = global.characters.filter((c) => c.map_id !== viewMapId);
   const mapTracks = global.tracks.filter((t) => t.map_id === viewMapId);
   const music = global.music;
 
   return (
     <div className="livemap">
-      <div className={`map-pane ${placing ? 'placing' : ''} ${paint ? 'painting' : ''}`}>
+      <div className={`map-pane ${placing ? 'placing' : ''} ${paint ? 'painting' : ''} ${rulerPath ? 'measuring' : ''}`}>
         <MapCanvas
           map={map}
           strokes={detail?.strokes || []}
@@ -216,6 +227,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           rings={rings}
           notes={detail?.annotations || []}
           guide={travelPath ? { kind: 'sight', points: travelPath, close: false } : null}
+          ruler={rulerPath}
           selectedKeys={selected}
           paint={paintProps}
           onStroke={(s) => act('POST', '/api/dm/ink', {
@@ -233,11 +245,17 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
         {map && (
           <PaintBar
             paint={paint}
-            setPaint={setPaint}
+            setPaint={(v) => { setRulerPath(null); setPaint(v); }}
             hasInk={(detail?.ink || []).length > 0}
             onUndo={() => act('POST', `/api/dm/maps/${viewMapId}/ink-undo`)}
             onClear={() => act('DELETE', `/api/dm/maps/${viewMapId}/ink`)}
           />
+        )}
+        {map && (
+          <button className={`ruler-toggle ${rulerPath ? 'on' : ''}`} onClick={toggleRuler}
+            title="Measure distance along a path you click out on the map">
+            {rulerPath ? 'Stop measuring' : 'Measure'}
+          </button>
         )}
         {placing && (
           <div className="placing-hint">
@@ -249,6 +267,18 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           <div className="placing-hint">
             Click the route across the kingdom, then “Start the journey”.
             <button className="ghost small" onClick={() => setTravelPath(null)}>Cancel</button>
+          </div>
+        )}
+        {rulerPath && (
+          <div className="placing-hint">
+            <span className="ruler-total">{rulerMeters.toFixed(rulerMeters < 100 ? 1 : 0)} m</span>
+            <span className="muted small">Click points along the path to measure it.</span>
+            <span className="spacer" />
+            <button className="ghost small" disabled={!rulerPath.length}
+              onClick={() => setRulerPath((p) => p.slice(0, -1))}>Undo point</button>
+            <button className="ghost small" disabled={!rulerPath.length}
+              onClick={() => setRulerPath([])}>Clear</button>
+            <button className="ghost small" onClick={() => setRulerPath(null)}>Done</button>
           </div>
         )}
       </div>
@@ -280,7 +310,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           {isWorld && (
             <div className="travel-box">
               {!travelPath ? (
-                <button onClick={() => setTravelPath([])}>Simulate travel…</button>
+                <button onClick={() => { setTravelPath([]); setRulerPath(null); }}>Simulate travel…</button>
               ) : (
                 <>
                   <p className="muted small">Click the route across the kingdom — from where they are to where they're going ({travelPath.length} points).</p>

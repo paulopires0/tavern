@@ -244,6 +244,18 @@ code { background: #0008; padding: 2px 6px; border-radius: 6px; }
 /* the bar is a nuisance on a phone-sized DM screen; it stays, just tighter */
 @media (max-width: 900px) { .paintbar { left: 4px; gap: 5px; } }
 
+/* Distance ruler: a floating toggle, and a bold readout in the hint bar */
+.ruler-toggle {
+  position: absolute; left: 10px; top: 10px; z-index: 13;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: .85rem;
+  background: #12100be6; border: 1px solid var(--border-strong); color: var(--fg);
+  box-shadow: 0 4px 14px #0007;
+}
+.ruler-toggle:hover { background: #1c1810f2; }
+.ruler-toggle.on { background: #7ff0e0; color: #10201d; border-color: #7ff0e0; font-weight: 600; }
+.map-pane.measuring .mapcanvas { cursor: crosshair; touch-action: none; }
+.ruler-total { font-weight: 700; font-size: 1.05rem; color: #7ff0e0; margin-right: 4px; }
+
 .side-panel {
   width: 330px; min-width: 330px; overflow-y: auto; padding: 12px;
   background: var(--bg2); border-left: 1px solid var(--border-strong);

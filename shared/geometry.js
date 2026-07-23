@@ -38,6 +38,16 @@ export function segSegDist(p1, p2, p3, p4) {
   );
 }
 
+// Total length of a polyline [[x,y], …] in the same units as its coordinates
+// (map image px). Divide by a map's scale (px/m) to get metres.
+export function polylineLength(points) {
+  let d = 0;
+  for (let i = 1; i < points.length; i++) {
+    d += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+  }
+  return d;
+}
+
 // Flatten a stroke into line segments [[a, b], ...].
 export function strokeSegments(stroke) {
   const pts = stroke.points.map(([x, y]) => ({ x, y }));

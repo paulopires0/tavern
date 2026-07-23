@@ -4,7 +4,7 @@ import {
   MAP_LABEL_OF_TOKEN, MAP_LABEL_MIN_SCREEN_PX,
   MAP_SETTLE_MS, MAP_TILE_PX, MAP_BASE_PX, MAP_TILE_PAD,
 } from '../../shared/gameRules.js';
-import { strokeSegments, cliffNormal } from '../../shared/geometry.js';
+import { strokeSegments, cliffNormal, polylineLength } from '../../shared/geometry.js';
 
 // Continuous-map renderer shared by the TV, DM live console and map editor.
 // Interaction model:
@@ -24,6 +24,8 @@ import { strokeSegments, cliffNormal } from '../../shared/geometry.js';
 //   rings        [{x, y, radiusPx, color, label, fill}]
 //   notes        DM annotations [{id, x, y, text, open, box_dx, box_dy}] (DM views only)
 //   guide        in-progress polyline {kind, points:[[x,y]…], close} | null (editor)
+//   ruler        measure mode: points:[[x,y]…] | null — draws the path with
+//                per-leg and total distances (metres, via map.scale)
 //   selectedKeys Set of tokenKey
 //   ink          DM drawing everyone sees [{id, tool, points, color, width}]
 //   paint        null | {kind: wall|sight|cliff|ink, tool: brush|line|rect|eraser,
@@ -97,7 +99,7 @@ function visibleRegion(vb, map) {
 
 export default function MapCanvas({
   map, strokes = [], ink = [], fogGrid = null, tokens = [], objects = [], rings = [],
-  notes = [], guide = null, frameBox = null, selectedKeys = null, paint = null,
+  notes = [], guide = null, ruler = null, frameBox = null, selectedKeys = null, paint = null,
   onStroke, onErase, onTokenClick, onTokensMove, onNoteToggle, onNoteMove,
   onObjectClick, onCanvasClick,
 }) {
@@ -350,7 +352,7 @@ export default function MapCanvas({
   }
 
   function onTokenPointerDown(t, ev) {
-    if (paint) return; // drawing: let the stroke run over tokens instead of grabbing them
+    if (paint || ruler) return; // drawing/measuring: clicks fall through to the map, not the token
     if (!(t.draggable || onTokenClick)) return;
     ev.stopPropagation();
     svgRef.current.setPointerCapture(ev.pointerId);
@@ -361,7 +363,7 @@ export default function MapCanvas({
   // opens it; a small drag is treated as a pan of the map instead, so the icon
   // never traps a pan that merely started on top of it.
   function onObjectPointerDown(o, ev) {
-    if (paint || !onObjectClick) return;
+    if (paint || ruler || !onObjectClick) return;
     ev.stopPropagation();
     svgRef.current.setPointerCapture(ev.pointerId);
     gestureRef.current = { type: 'object', object: o, p0: toSvg(ev), vb0: vb, startClient: [ev.clientX, ev.clientY], moved: false };
@@ -370,7 +372,7 @@ export default function MapCanvas({
   // Open note cards drag freely (even off the map art, onto the table); a
   // click without movement folds them instead.
   function onNotePointerDown(n, base, ev) {
-    if (paint) return; // ditto: notes don't catch the brush
+    if (paint || ruler) return; // ditto: notes don't catch the brush or ruler
     ev.stopPropagation();
     svgRef.current.setPointerCapture(ev.pointerId);
     gestureRef.current = { type: 'note', note: n, base, p0: toSvg(ev), moved: false };
@@ -379,8 +381,8 @@ export default function MapCanvas({
   function onPointerMove(ev) {
     const g = gestureRef.current;
     if (!g) {
-      // no active gesture: track the cursor so the poly guide can rubber-band
-      if (guide) setHoverPt(toSvg(ev));
+      // no active gesture: track the cursor so the poly guide / ruler rubber-bands
+      if (guide || ruler) setHoverPt(toSvg(ev));
       return;
     }
     if (g.type === 'pan') {
@@ -659,6 +661,46 @@ export default function MapCanvas({
                   <circle key={i} cx={x} cy={y} r={i === 0 ? r * 1.3 : r}
                     fill={i === 0 ? col : '#fff'} stroke={col} strokeWidth={lw} />
                 ))}
+              </g>
+            );
+          })()}
+
+          {ruler && ruler.length > 0 && (() => {
+            const col = '#7ff0e0'; // aqua: distinct from ink (gold) and sight (blue)
+            const r = Math.max(3, map.image_w / 320);
+            const lw = Math.max(1.5, map.image_w / 520);
+            const scale = map.scale || 1;
+            // the live chain includes the segment out to the cursor, so the total
+            // updates as you move before committing the next point
+            const chain = hoverPt ? [...ruler, [hoverPt.x, hoverPt.y]] : ruler;
+            const fmt = (m) => `${m.toFixed(m < 100 ? 1 : 0)} m`;
+            const legs = [];
+            let total = 0;
+            for (let i = 1; i < chain.length; i++) {
+              const segM = Math.hypot(chain[i][0] - chain[i - 1][0], chain[i][1] - chain[i - 1][1]) / scale;
+              total += segM;
+              legs.push({ mx: (chain[i][0] + chain[i - 1][0]) / 2, my: (chain[i][1] + chain[i - 1][1]) / 2, m: segM });
+            }
+            const end = chain[chain.length - 1];
+            return (
+              <g pointerEvents="none">
+                <path d={'M' + chain.map(([x, y]) => `${x},${y}`).join('L')} fill="none"
+                  stroke={col} strokeWidth={lw * 2} strokeOpacity={0.9}
+                  strokeDasharray={hoverPt ? `${r * 2} ${r}` : undefined}
+                  strokeLinecap="round" strokeLinejoin="round" />
+                {chain.map(([x, y], i) => (
+                  <circle key={i} cx={x} cy={y} r={i === 0 ? r * 1.3 : r}
+                    fill={i === 0 ? col : '#fff'} stroke={col} strokeWidth={lw} />
+                ))}
+                {legs.length > 1 && legs.map((s, i) => (
+                  <text key={i} x={s.mx} y={s.my - r * 1.6} textAnchor="middle" fontSize={labelFs}
+                    fill={col} stroke="#000" strokeWidth={0.7} paintOrder="stroke">{fmt(s.m)}</text>
+                ))}
+                {chain.length >= 2 && (
+                  <text x={end[0]} y={end[1] - r * 2.6} textAnchor="middle"
+                    fontSize={labelFs * 1.4} fontWeight="700"
+                    fill="#fff" stroke="#000" strokeWidth={1} paintOrder="stroke">{fmt(total)}</text>
+                )}
               </g>
             );
           })()}
