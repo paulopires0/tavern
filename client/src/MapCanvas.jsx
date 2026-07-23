@@ -550,16 +550,21 @@ export default function MapCanvas({
   // Tokens are world-sized (TOKEN_METERS × ruler scale) but their clamps are
   // in SCREEN pixels tied to the current zoom: zoomed way out a token freezes
   // at TOKEN_MIN_SCREEN_PX on screen (always findable); zoomed way in it
-  // freezes at a fraction of the viewport. In the normal range it is
-  // world-true. Characters, NPCs and monsters all pass through clampToken.
+  // freezes at a fraction of the viewport. Characters, NPCs and monsters all
+  // pass through sizedToken, which keeps their per-entity size multiplier.
   const zoomK = vb ? size.w / vb.w : 1; // screen px per image px
   const worldToken = TOKEN_METERS * (map.scale || 20) * (map.token_scale || 1);
-  const clampToken = (imgPx) => {
-    const minImg = TOKEN_MIN_SCREEN_PX / zoomK;
-    const maxImg = (Math.min(size.w, size.h) * TOKEN_MAX_VIEW_FRACTION) / zoomK;
-    return Math.min(Math.max(imgPx, minImg), Math.max(minImg, maxImg));
-  };
-  const baseToken = clampToken(worldToken);
+  const minTokenImg = TOKEN_MIN_SCREEN_PX / zoomK;
+  const maxTokenImg = Math.max(minTokenImg, (Math.min(size.w, size.h) * TOKEN_MAX_VIEW_FRACTION) / zoomK);
+  // A token is worldToken across on the map. At scale 1 it never shrinks below
+  // the on-screen floor (always findable) nor grows past the cap (never swallows
+  // the view). The per-entity size multiplier ALWAYS applies on top of that
+  // floor, so a bigger monster/NPC is visibly bigger — and its name, a fraction
+  // of the token, grows with it. Without this, on a small-scale map (where the
+  // base token already sits at the floor) every size multiplier would collapse
+  // to the same floored size and nothing — token or name — would scale.
+  const sizedToken = (scale = 1) => Math.min(Math.max(worldToken, minTokenImg) * scale, maxTokenImg);
+  const baseToken = sizedToken(1);
   // Map ICONS (doors, chests, shops) share the reference token's footprint and
   // scale with it, so they read as things standing on the map, not fixed HUD
   // marks. The editor's icon-size knob is a per-map fine-tune on top (1 = the
@@ -736,7 +741,7 @@ export default function MapCanvas({
             }
             // NPCs are creatures (world-sized tokens); chests/shops are icons.
             const isNpc = o.kind === 'npc';
-            const s = isNpc ? clampToken(worldToken * (o.scale || 1)) : iconS;
+            const s = isNpc ? sizedToken(o.scale || 1) : iconS;
             const fs = isNpc ? labelForToken(s) : labelFs; // an NPC's name follows its token
             const icon = o.icon
               || (o.kind === 'chest' ? '/uploads/chest-token/default'
@@ -764,7 +769,7 @@ export default function MapCanvas({
             if (t.x == null) return null;
             const isDragged = dragDelta && (dragDelta.key === t.tokenKey ||
               (selectedKeys?.has(dragDelta.key) && selectedKeys?.has(t.tokenKey)));
-            const tokenSize = clampToken(worldToken * (t.scale || 1));
+            const tokenSize = sizedToken(t.scale || 1);
             return (
               <TokenNode
                 key={t.tokenKey}
