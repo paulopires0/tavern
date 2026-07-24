@@ -268,14 +268,12 @@ export function tvMapPayload(mapId) {
   const characters = db.prepare('SELECT id, name, x, y, token_color, token, token_scale, token_shape, hp, max_hp FROM characters WHERE map_id = ?')
     .all(mapId)
     .map((c) => ({ ...c, teleport: wasTeleport('character', c.id), path: movePathOf('character', c.id) }));
-  const shops = db.prepare('SELECT id, name, icon, x, y FROM shops WHERE map_id = ?')
-    .all(mapId)
-    .filter((s2) => s2.x != null && cellStateAt(s2.x, s2.y) >= 1); // buildings: remembered once seen
-  // Doors are DM knowledge; chests are too — an icon on the big screen would
-  // announce hidden loot before the party has found anything. Neither is sent.
+  // Doors, chests and shops are all DM knowledge: an icon on the big screen
+  // would give away a connection, hidden loot, or a shop before the party has
+  // found it. None of these are sent to the party view.
   return {
-    ...baseMapPayload(map), connections: [], chests: [], fogGrid, ink: inkOf(mapId),
-    characters, monsters, npcs, shops,
+    ...baseMapPayload(map), connections: [], chests: [], shops: [], fogGrid, ink: inkOf(mapId),
+    characters, monsters, npcs,
   };
 }
 

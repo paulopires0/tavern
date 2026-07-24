@@ -226,16 +226,18 @@ test('e2e', async (t) => {
     assert.equal(push.ink.length, 0, 'clear wipes the map');
   });
 
-  await t.test('chests never appear on the party screen', async () => {
-    // put a chest right where the hero stands (100,600) and give the party full
-    // vision, so under any old "show discovered/visible chests" rule it WOULD
-    // be sent — the TV payload must still omit it.
+  await t.test('chests and shops never appear on the party screen', async () => {
+    // put a chest and a shop right where the hero stands (100,600) and give the
+    // party full vision, so under any old "show visible objects" rule they WOULD
+    // be sent — the TV payload must still omit both.
     await api('POST', '/api/dm/chests', { mapId: mapA, x: 100, y: 600 });
+    await api('POST', '/api/dm/shops', { name: 'Corner store', map_id: mapA, x: 100, y: 600 });
     await api('POST', `/api/dm/maps/${mapA}/reveal`, { vision: true });
     const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
     cleanup.push(tv);
     const push = await tv.latest('state:map');
     assert.ok(!(push.chests || []).length, 'no chest icons betray loot on the TV');
+    assert.ok(!(push.shops || []).length, 'no shop icons on the TV either');
     await api('POST', `/api/dm/maps/${mapA}/reveal`, { vision: false }); // restore for later tests
   });
 
@@ -626,13 +628,14 @@ test('e2e', async (t) => {
     assert.ok((await tv2.next('state:map')).map, 'second TV gets it too');
   });
 
-  await t.test('shops appear on the TV once their spot is seen; doors never do', async () => {
-    // the fletcher at (900,300) on mapB sits where the hero has walked
+  await t.test('shops and doors are DM knowledge — never on the TV', async () => {
+    // the fletcher at (900,300) on mapB sits where the hero has walked, and yet
+    // its icon is withheld: shops, like chests and doors, are the DM's to reveal
     await api('POST', `/api/dm/maps/${mapB}/set-active`);
     const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
     cleanup.push(tv);
     const push = await tv.latest('state:map');
-    assert.ok((push.shops || []).some((s2) => s2.id === shopId), 'seen shop is on the TV');
+    assert.ok(!(push.shops || []).some((s2) => s2.id === shopId), 'seen shop is still off the TV');
     // mapB has a door the hero walked right past — still not marked
     assert.equal((push.connections || []).length, 0, 'doors are DM knowledge only');
   });
