@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import MapCanvas from '../MapCanvas.jsx';
+import MapChecklist from './MapChecklist.jsx';
 import { upload } from '../api.js';
 import { NumField } from '../fields.jsx';
 import { pointSegDist, strokeSegments } from '../../../shared/geometry.js';
@@ -180,6 +181,7 @@ export default function MapEditor({ global, detail, viewMapId, setViewMapId, act
           onStroke={onStroke}
           onCanvasClick={onCanvasClick}
         />
+        <MapChecklist maps={global.maps} onJump={setViewMapId} />
         {tool === 'ruler' && (
           <div className="placing-hint">
             {ruler ? 'Now click the END of your reference line.' : 'Click the START of a line whose real length you know (a door, a cart…).'}
