@@ -766,6 +766,26 @@ export default function MapCanvas({
 
           {objects.map((o) => {
             if (o.x == null) return null;
+            if (o.kind === 'ground') {
+              // DM-only dropped loot: a small pouch marker with the item name.
+              const gs = iconS * 0.55;
+              const clickable = onObjectClick && !paint && o.clickable;
+              return (
+                <g key={o.objKey}
+                  pointerEvents={clickable ? 'auto' : 'none'}
+                  style={clickable ? { cursor: 'pointer' } : undefined}
+                  onPointerDown={clickable ? (ev) => onObjectPointerDown(o, ev) : undefined}>
+                  <circle cx={o.x} cy={o.y} r={gs * 0.62} fill="#d9a441" fillOpacity={0.18}
+                    stroke="#e4b343" strokeWidth={Math.max(1.5, gs * 0.09)} strokeDasharray={`${gs * 0.3} ${gs * 0.22}`} />
+                  <rect x={o.x - gs / 2} y={o.y - gs / 2} width={gs} height={gs} rx={gs * 0.28}
+                    fill="#caa14a" stroke="#3a2c12" strokeWidth={Math.max(1.5, gs * 0.11)} />
+                  {o.label && (
+                    <text x={o.x} y={o.y + gs * 0.72 + labelFs} textAnchor="middle" fontSize={labelFs}
+                      fill="#f3e6bf" stroke="#000" strokeWidth={0.7} paintOrder="stroke">{o.label}</text>
+                  )}
+                </g>
+              );
+            }
             if (o.kind === 'connection') {
               return (
                 <g key={o.objKey} pointerEvents="none">

@@ -207,6 +207,19 @@ CREATE TABLE IF NOT EXISTS monsters (
   token_shape   TEXT NOT NULL DEFAULT 'free'
 );
 
+-- Loot the DM has dropped on the floor. DM-only: never sent to the TV or
+-- players (a marker would give away that there is something to grab). The DM
+-- clicks it to hand it to a character, which moves the item into that bag and
+-- clears the drop.
+CREATE TABLE IF NOT EXISTS ground_items (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  map_id   INTEGER NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+  item_id  INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  x        REAL NOT NULL,
+  y        REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS chests (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   map_id     INTEGER NOT NULL REFERENCES maps(id) ON DELETE CASCADE,

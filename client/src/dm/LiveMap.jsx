@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import MapCanvas from '../MapCanvas.jsx';
 import ChestDialog from './ChestDialog.jsx';
+import GroundItemDialog from './GroundItemDialog.jsx';
 import TradeDialog from './TradeDialog.jsx';
 import MapGraph from './MapGraph.jsx';
 import JourneyPlanner from './JourneyPlanner.jsx';
 import PaintBar from './PaintBar.jsx';
 import { upload } from '../api.js';
-import { NumField } from '../fields.jsx';
+import { NumField, GiveItem } from '../fields.jsx';
 import { CropInput } from '../ImageCropper.jsx';
 import {
   WEATHERS, INK_DEFAULT_COLOR, INK_DEFAULT_WIDTH_M, INK_ERASER_M,
@@ -22,6 +23,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
   const [rangeItem, setRangeItem] = useState('');
   const [placing, setPlacing] = useState(null);
   const [chestOpen, setChestOpen] = useState(null);
+  const [groundOpen, setGroundOpen] = useState(null); // a dropped item's give/remove dialog
   const [monsterForm, setMonsterForm] = useState({ name: '', hp: 10 });
   const [templateId, setTemplateId] = useState('');
   const [graphOpen, setGraphOpen] = useState(false);
@@ -131,6 +133,13 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
       setPlacing(null);
       return;
     }
+    if (placing.kind === 'ground-item') {
+      await act('POST', '/api/dm/ground-items', {
+        mapId: viewMapId, itemId: placing.itemId, quantity: placing.quantity || 1, x, y,
+      });
+      setPlacing(null);
+      return;
+    }
     if (placing.kind === 'character' || placing.kind === 'monster-move') {
       await act('POST', '/api/dm/move-token', {
         kind: placing.kind === 'character' ? 'character' : 'monster',
@@ -175,6 +184,9 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
     objKey: `shop${s.id}`, kind: 'shop', x: s.x, y: s.y, icon: s.icon, label: s.name,
   }))).concat((detail?.connections || []).map((c) => ({
     objKey: `conn${c.id}`, kind: 'connection', x: c.x, y: c.y, label: c.label,
+  }))).concat((detail?.groundItems || []).map((g) => ({
+    objKey: `ground${g.id}`, kind: 'ground', id: g.id, x: g.x, y: g.y, clickable: true,
+    label: g.quantity > 1 ? `${g.name} ×${g.quantity}` : g.name,
   })));
 
   // The only overlay ring is the selected weapon's reach.
@@ -240,7 +252,10 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           onTokensMove={isWorld ? null : onTokensMove}
           onNoteToggle={(n) => act('PATCH', `/api/dm/annotations/${n.id}`, { open: n.open ? 0 : 1 })}
           onNoteMove={(n, off) => act('PATCH', `/api/dm/annotations/${n.id}`, off)}
-          onObjectClick={(o) => { if (o.kind === 'chest') setChestOpen({ chestId: o.id }); }}
+          onObjectClick={(o) => {
+            if (o.kind === 'chest') setChestOpen({ chestId: o.id });
+            else if (o.kind === 'ground') setGroundOpen(detail.groundItems.find((g) => g.id === o.id));
+          }}
           onCanvasClick={onCanvasClick}
         />
         {map && (
@@ -419,6 +434,18 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           <p className="muted small">Shift-click to add one, or shift-drag a box over the map to grab a whole group. Then drag any to move them together.</p>
         </section>
 
+        {!isWorld && (
+          <section>
+            <h3>Drop loot on the floor</h3>
+            <p className="muted small">Only you see it. Click it on the map to hand it to a player.</p>
+            <GiveItem items={global.items} label="Drop…"
+              onGive={(itemId, quantity) => {
+                const it = global.items.find((i) => i.id === itemId);
+                setPlacing({ kind: 'ground-item', itemId, quantity, name: it?.name || 'item' });
+              }} />
+          </section>
+        )}
+
         <section>
           <h3>My notes</h3>
           <p className="muted small">Private pins only you see.</p>
@@ -581,6 +608,14 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           session={global.chestSession}
           act={act}
           onClose={() => setChestOpen(null)}
+        />
+      )}
+      {groundOpen && (
+        <GroundItemDialog
+          drop={groundOpen}
+          characters={global.characters}
+          act={act}
+          onClose={() => setGroundOpen(null)}
         />
       )}
       {global.shopSession && (

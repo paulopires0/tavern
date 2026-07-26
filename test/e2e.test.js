@@ -241,6 +241,33 @@ test('e2e', async (t) => {
     await api('POST', `/api/dm/maps/${mapA}/reveal`, { vision: false }); // restore for later tests
   });
 
+  await t.test('dropped loot is DM-only and can be handed to a character', async () => {
+    const torch = (await api('POST', '/api/dm/items', { name: 'Ground Torch', category: 'item', tags: ['common'] })).id;
+    const drop = await api('POST', '/api/dm/ground-items', { mapId: mapA, itemId: torch, quantity: 2, x: 100, y: 600 });
+    assert.ok(drop.id, 'the drop is placed');
+
+    // the DM sees it on their map, with the item name joined in
+    const dm = await connectAsDmMap(mapA);
+    const g = dm.groundItems.find((x) => x.id === drop.id);
+    assert.ok(g && g.name === 'Ground Torch' && g.quantity === 2, 'DM sees the dropped loot');
+
+    // the party never does — even standing right on it under full vision
+    await api('POST', `/api/dm/maps/${mapA}/reveal`, { vision: true });
+    const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
+    cleanup.push(tv);
+    const push = await tv.latest('state:map');
+    assert.ok(!('groundItems' in push) || !push.groundItems.length, 'dropped loot never reaches the TV');
+    await api('POST', `/api/dm/maps/${mapA}/reveal`, { vision: false });
+
+    // handing it over moves it into the bag and clears the floor
+    await api('POST', `/api/dm/ground-items/${drop.id}/give`, { characterId: hero });
+    const g2 = await (await pushedDm()).next('state');
+    const heroBag = g2.characters.find((c) => c.id === hero).inventory || [];
+    assert.ok(heroBag.some((e) => e.id === torch && e.quantity >= 2), 'the hero received it');
+    const after = await connectAsDmMap(mapA);
+    assert.ok(!after.groundItems.some((x) => x.id === drop.id), 'the drop is gone once given');
+  });
+
   await t.test('reset-fog wipes the party memory of a map', async () => {
     const tv = await connectSocket({ tvKey: getConfig('spectator_key') });
     cleanup.push(tv);

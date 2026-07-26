@@ -235,6 +235,8 @@ export function dmMapPayload(mapId) {
     chests: db.prepare('SELECT * FROM chests WHERE map_id = ?').all(mapId),
     shops: db.prepare('SELECT * FROM shops WHERE map_id = ?').all(mapId),
     npcs: db.prepare('SELECT * FROM npcs WHERE map_id = ?').all(mapId),
+    groundItems: db.prepare(`SELECT g.id, g.x, g.y, g.quantity, g.item_id, i.name, i.icon, i.category
+      FROM ground_items g JOIN items i ON i.id = g.item_id WHERE g.map_id = ? ORDER BY g.id`).all(mapId),
     annotations,
   };
 }

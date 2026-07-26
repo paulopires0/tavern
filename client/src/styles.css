@@ -337,6 +337,7 @@ code { background: #0008; padding: 2px 6px; border-radius: 6px; }
   box-shadow: 0 10px 48px #000;
 }
 .dialog.wide { width: min(780px, 96vw); }
+.dialog.narrow { width: min(380px, 96vw); }
 /* Putting loot into a chest: pool picker + inline new-item form */
 .chest-add {
   border: 1px solid var(--border); border-radius: 10px;

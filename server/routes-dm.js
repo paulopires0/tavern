@@ -1029,6 +1029,35 @@ dmRouter.post('/chests', (req, res) => {
   ok(res, { id: info.lastInsertRowid });
 });
 
+// ---------------------------------------------------------------------------
+// Ground items: loot the DM drops on the floor. DM-only (never on the TV). The
+// DM hands one to a character, which moves it into their bag and clears it.
+// ---------------------------------------------------------------------------
+dmRouter.post('/ground-items', (req, res) => {
+  const b = req.body || {};
+  if (!getMap(Number(b.mapId))) return bad(res, 'no such map');
+  if (!db.prepare('SELECT 1 FROM items WHERE id = ?').get(Number(b.itemId))) return bad(res, 'no such item');
+  const info = db.prepare('INSERT INTO ground_items (map_id, item_id, quantity, x, y) VALUES (?,?,?,?,?)')
+    .run(Number(b.mapId), Number(b.itemId), Math.max(1, Number(b.quantity) || 1), Number(b.x), Number(b.y));
+  ok(res, { id: info.lastInsertRowid });
+});
+
+dmRouter.delete('/ground-items/:id', (req, res) => {
+  db.prepare('DELETE FROM ground_items WHERE id = ?').run(Number(req.params.id));
+  ok(res);
+});
+
+dmRouter.post('/ground-items/:id/give', (req, res) => {
+  const g = db.prepare('SELECT * FROM ground_items WHERE id = ?').get(Number(req.params.id));
+  if (!g) return bad(res, 'no such ground item');
+  const charId = Number(req.body?.characterId);
+  if (!db.prepare('SELECT 1 FROM characters WHERE id = ?').get(charId)) return bad(res, 'no such character');
+  addToInventory('character', charId, g.item_id, g.quantity);
+  logInventory(charId, g.item_id, g.quantity, 'looted');
+  db.prepare('DELETE FROM ground_items WHERE id = ?').run(g.id);
+  ok(res);
+});
+
 dmRouter.patch('/chests/:id', (req, res) => {
   const chest = db.prepare('SELECT * FROM chests WHERE id = ?').get(Number(req.params.id));
   if (!chest) return bad(res, 'no such chest');
