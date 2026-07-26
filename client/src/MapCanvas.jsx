@@ -630,6 +630,11 @@ export default function MapCanvas({
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerLeave={() => hoverPt && setHoverPt(null)}
+          onContextMenu={onContextMenu ? (ev) => {
+            ev.preventDefault();
+            const p = toSvg(ev);
+            onContextMenu({ x: p.x, y: p.y, clientX: ev.clientX, clientY: ev.clientY });
+          } : undefined}
         >
           <defs>
             {/* wooden table beyond the map art */}

@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import MapCanvas from '../MapCanvas.jsx';
 import ChestDialog from './ChestDialog.jsx';
 import GroundItemDialog from './GroundItemDialog.jsx';
+import ContextMenu from './ContextMenu.jsx';
+import PickerDialog from './PickerDialog.jsx';
 import TradeDialog from './TradeDialog.jsx';
 import MapGraph from './MapGraph.jsx';
 import JourneyPlanner from './JourneyPlanner.jsx';
@@ -24,6 +26,8 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
   const [placing, setPlacing] = useState(null);
   const [chestOpen, setChestOpen] = useState(null);
   const [groundOpen, setGroundOpen] = useState(null); // a dropped item's give/remove dialog
+  const [ctxMenu, setCtxMenu] = useState(null);  // right-click menu {x,y,clientX,clientY}
+  const [atPicker, setAtPicker] = useState(null); // {kind:'drop'|'monster'|'npc', x, y}
   const [monsterForm, setMonsterForm] = useState({ name: '', hp: 10 });
   const [templateId, setTemplateId] = useState('');
   const [graphOpen, setGraphOpen] = useState(false);
@@ -256,6 +260,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
             if (o.kind === 'chest') setChestOpen({ chestId: o.id });
             else if (o.kind === 'ground') setGroundOpen(detail.groundItems.find((g) => g.id === o.id));
           }}
+          onContextMenu={isWorld ? null : (info) => setCtxMenu(info)}
           onCanvasClick={onCanvasClick}
         />
         {map && (
@@ -617,6 +622,54 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           act={act}
           onClose={() => setGroundOpen(null)}
         />
+      )}
+      {ctxMenu && (
+        <ContextMenu x={ctxMenu.clientX} y={ctxMenu.clientY} onClose={() => setCtxMenu(null)}
+          items={[
+            { label: 'Add chest here', onClick: () => act('POST', '/api/dm/chests', { mapId: viewMapId, x: ctxMenu.x, y: ctxMenu.y }) },
+            { label: 'Drop loot here…', onClick: () => setAtPicker({ kind: 'drop', x: ctxMenu.x, y: ctxMenu.y }) },
+            { label: 'Spawn monster here…', onClick: () => setAtPicker({ kind: 'monster', x: ctxMenu.x, y: ctxMenu.y }) },
+            { label: 'Place NPC here…', onClick: () => setAtPicker({ kind: 'npc', x: ctxMenu.x, y: ctxMenu.y }) },
+            { label: 'Bring a character here…', onClick: () => setAtPicker({ kind: 'char', x: ctxMenu.x, y: ctxMenu.y }) },
+            { sep: true },
+            { label: 'Pin a note here', onClick: () => {
+              const t = window.prompt('Note to self (players never see it):', '');
+              if (t?.trim()) act('POST', '/api/dm/annotations', { mapId: viewMapId, x: ctxMenu.x, y: ctxMenu.y, text: t.trim() });
+            } },
+          ]} />
+      )}
+      {atPicker?.kind === 'drop' && (
+        <div className="dialog-backdrop" onClick={() => setAtPicker(null)}>
+          <div className="dialog narrow" onClick={(e) => e.stopPropagation()}>
+            <header className="row spread"><h3>Drop loot here</h3>
+              <button className="ghost" onClick={() => setAtPicker(null)}>✕</button></header>
+            <GiveItem items={global.items} label="Drop" onGive={async (itemId, quantity) => {
+              if (await act('POST', '/api/dm/ground-items', { mapId: viewMapId, itemId, quantity, x: atPicker.x, y: atPicker.y })) setAtPicker(null);
+            }} />
+          </div>
+        </div>
+      )}
+      {atPicker?.kind === 'monster' && (
+        <PickerDialog title="Spawn monster here" hint="From your bestiary."
+          options={global.monsterTemplates.map((t) => ({ id: t.id, label: t.name, sub: `HP ${t.hp}` }))}
+          empty="No bestiary templates yet — create one in the Bestiary tab."
+          onPick={(o) => act('POST', '/api/dm/monsters', { templateId: o.id, map_id: viewMapId, x: atPicker.x, y: atPicker.y })}
+          onClose={() => setAtPicker(null)} />
+      )}
+      {atPicker?.kind === 'npc' && (
+        <PickerDialog title="Place NPC here"
+          options={global.npcs.filter((n) => n.map_id !== viewMapId).map((n) => ({ id: n.id, label: n.name }))}
+          empty="Every NPC is already here (or none exist yet)."
+          onPick={(o) => act('PATCH', `/api/dm/npcs/${o.id}`, { map_id: viewMapId, x: atPicker.x, y: atPicker.y })}
+          onClose={() => setAtPicker(null)} />
+      )}
+      {atPicker?.kind === 'char' && (
+        <PickerDialog title="Bring a character here"
+          options={global.characters.filter((c) => c.map_id !== viewMapId)
+            .map((c) => ({ id: c.id, label: c.name, sub: global.maps.find((m) => m.id === c.map_id)?.name || 'off-map' }))}
+          empty="Every character is already on this map."
+          onPick={(o) => act('POST', '/api/dm/move-token', { kind: 'character', id: o.id, mapId: viewMapId, x: atPicker.x, y: atPicker.y })}
+          onClose={() => setAtPicker(null)} />
       )}
       {global.shopSession && (
         <TradeDialog session={global.shopSession} global={global} act={act} />
