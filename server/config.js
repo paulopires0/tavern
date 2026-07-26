@@ -8,7 +8,11 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 export const PORT = Number(process.env.PORT || 8030);
 export const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(root, 'data'));
-export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+// Uploads (map art, tokens, audio) are the bulk of the data and grow fast — a
+// single map PNG can be 30 MB. UPLOADS_DIR can point them at roomier storage
+// (scratch//data volumes) while the small, precious SQLite file stays in
+// DATA_DIR where it gets backed up. data/uploads may also just be a symlink.
+export const UPLOADS_DIR = path.resolve(process.env.UPLOADS_DIR || path.join(DATA_DIR, 'uploads'));
 export const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'tavern.db');
 export const DM_PASSWORD = process.env.DM_PASSWORD || 'dm1234'; // change this! (README)
 export const CLIENT_DIST = path.join(root, 'client', 'dist');
