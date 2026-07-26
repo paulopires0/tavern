@@ -101,7 +101,7 @@ export default function MapCanvas({
   map, strokes = [], ink = [], fogGrid = null, tokens = [], objects = [], rings = [],
   notes = [], guide = null, ruler = null, frameBox = null, selectedKeys = null, paint = null,
   onStroke, onErase, onTokenClick, onTokensMove, onNoteToggle, onNoteMove,
-  onObjectClick, onCanvasClick,
+  onObjectClick, onCanvasClick, onMarqueeSelect, onContextMenu,
 }) {
   const wrapRef = useRef(null);
   const svgRef = useRef(null);
@@ -112,6 +112,7 @@ export default function MapCanvas({
   const [noteDrag, setNoteDrag] = useState(null);       // note card drag ghost
   const [preview, setPreview] = useState(null);         // paint preview stroke
   const [hoverPt, setHoverPt] = useState(null);         // cursor in svg space (poly guide)
+  const [marquee, setMarquee] = useState(null);         // rubber-band select box (svg coords)
 
   // --- viewport ---------------------------------------------------------------
   useLayoutEffect(() => {
@@ -362,6 +363,13 @@ export default function MapCanvas({
       setPreview({ ...paint, tool: paint.tool, points: [[p.x, p.y]] });
       return;
     }
+    // Shift+drag on empty map = rubber-band select (add everything the box
+    // touches to the selection). Plain drag still pans.
+    if (ev.shiftKey && onMarqueeSelect && !ruler) {
+      gestureRef.current = { type: 'marquee', p0: p, moved: false };
+      setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+      return;
+    }
     gestureRef.current = {
       type: 'pan', startClient: [ev.clientX, ev.clientY], vb0: vb, p0: p, moved: false,
     };
@@ -420,6 +428,10 @@ export default function MapCanvas({
       const dy = (ev.clientY - g.startClient[1]) * (g.vb0.h / size.h);
       if (Math.hypot(ev.clientX - g.startClient[0], ev.clientY - g.startClient[1]) > 4) g.moved = true;
       if (g.moved) setVb({ ...g.vb0, x: g.vb0.x - dx, y: g.vb0.y - dy });
+    } else if (g.type === 'marquee') {
+      const p = toSvg(ev);
+      if (Math.hypot(p.x - g.p0.x, p.y - g.p0.y) > 3) g.moved = true;
+      setMarquee({ x0: g.p0.x, y0: g.p0.y, x1: p.x, y1: p.y });
     } else if (g.type === 'erase') {
       const p = toSvg(ev);
       if (Math.hypot(p.x - g.last.x, p.y - g.last.y) > Math.max(3, paint.width / 3)) {
@@ -448,7 +460,19 @@ export default function MapCanvas({
     setDragDelta(null);
     setNoteDrag(null);
     setPreview(null);
+    setMarquee(null);
     if (!g) return;
+    if (g.type === 'marquee') {
+      const p = toSvg(ev);
+      const lo = { x: Math.min(g.p0.x, p.x), y: Math.min(g.p0.y, p.y) };
+      const hi = { x: Math.max(g.p0.x, p.x), y: Math.max(g.p0.y, p.y) };
+      const keys = tokens
+        .filter((t) => t.x != null && (t.draggable || onTokenClick)
+          && t.x >= lo.x && t.x <= hi.x && t.y >= lo.y && t.y <= hi.y)
+        .map((t) => t.tokenKey);
+      onMarqueeSelect(keys, g.moved); // a click with no drag clears; a box adds
+      return;
+    }
     if (g.type === 'pan') {
       if (!g.moved && onCanvasClick) onCanvasClick(g.p0.x, g.p0.y);
       return;
@@ -863,6 +887,14 @@ export default function MapCanvas({
               </g>
             );
           })}
+
+          {marquee && (
+            <rect pointerEvents="none"
+              x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)}
+              width={Math.abs(marquee.x1 - marquee.x0)} height={Math.abs(marquee.y1 - marquee.y0)}
+              fill="#e4b34322" stroke="#e4b343" strokeWidth={Math.max(1.5, vb.w / 500)}
+              strokeDasharray={`${vb.w / 90} ${vb.w / 140}`} />
+          )}
         </svg>
       )}
       <div className="zoom-controls">

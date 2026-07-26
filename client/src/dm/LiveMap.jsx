@@ -236,6 +236,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
           onErase={(points, radius) =>
             act('POST', `/api/dm/maps/${viewMapId}/ink-erase`, { points, radius })}
           onTokenClick={onTokenClick}
+          onMarqueeSelect={(keys) => setSelected((prev) => new Set([...prev, ...keys]))}
           onTokensMove={isWorld ? null : onTokensMove}
           onNoteToggle={(n) => act('PATCH', `/api/dm/annotations/${n.id}`, { open: n.open ? 0 : 1 })}
           onNoteMove={(n, off) => act('PATCH', `/api/dm/annotations/${n.id}`, off)}
@@ -415,7 +416,7 @@ export default function LiveMap({ global, detail, viewMapId, setViewMapId, act }
               );
             })}
           </ul>
-          <p className="muted small">Shift-click to select several.</p>
+          <p className="muted small">Shift-click to add one, or shift-drag a box over the map to grab a whole group. Then drag any to move them together.</p>
         </section>
 
         <section>
