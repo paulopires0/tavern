@@ -548,10 +548,11 @@ dmRouter.post('/world-journey', (req, res) => {
   if (!from || !target) return bad(res, 'bad map ids');
   const charIds = (b.charIds || []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
   if (!charIds.length) return bad(res, 'charIds required');
+  const npcIds = (b.npcIds || []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
   const drawn = (b.path || [])
     .map((p) => [Number(p[0]), Number(p[1])])
     .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
-  const info = startKingdomTravel(from, target, charIds,
+  const info = startKingdomTravel(from, target, charIds, npcIds,
     Number(b.arriveX) || target.image_w / 2, Number(b.arriveY) || target.image_h / 2, drawn);
   if (!info) return bad(res, 'the kingdom map or one of the map markers is missing');
   ok(res, info);
@@ -688,7 +689,7 @@ function nearby(table, mapId, x, y, radiusPx) {
 // "arrive". `drawn` are the DM's intermediate corners — the road is always
 // anchored to the two towns' markers. Returns the descriptor, or null when the
 // kingdom pieces aren't in place.
-function startKingdomTravel(fromMap, target, charIds, arriveX, arriveY, drawn = []) {
+function startKingdomTravel(fromMap, target, charIds, npcIds, arriveX, arriveY, drawn = []) {
   const world = worldMap();
   if (!world || fromMap?.world_x == null || target?.world_x == null) return null;
   const sameSpot = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < (world.cell_px || 8);
@@ -717,15 +718,24 @@ function startKingdomTravel(fromMap, target, charIds, arriveX, arriveY, drawn = 
     try {
       const wt = getConfig('world_travel', null);
       if (!wt || wt.nonce !== nonce) return; // superseded by a newer journey
-      charIds.forEach((id, i) => {
+      // The party and any escorting NPCs all land at the destination together,
+      // huddled in a knot. Only characters carry vision, so only they touch fog.
+      const arrivals = [
+        ...charIds.map((id) => ({ id, kind: 'character' })),
+        ...(npcIds || []).map((id) => ({ id, kind: 'npc' })),
+      ];
+      arrivals.forEach(({ id, kind }, i) => {
         const r = tokenPx * 0.6 * Math.sqrt(i);
         const a = i * 2.39996;
         const ax = Math.max(0, Math.min(target.image_w, arriveX + r * Math.cos(a)));
         const ay = Math.max(0, Math.min(target.image_h, arriveY + r * Math.sin(a)));
-        db.prepare('UPDATE characters SET map_id = ?, x = ?, y = ? WHERE id = ?').run(target.id, ax, ay, id);
-        setMoveFlag('character', id, true);
-        refreshFogFor(parseChar(db.prepare('SELECT * FROM characters WHERE id = ?').get(id)));
-        revealWorldFor(id, target, fromMap);
+        const table = kind === 'npc' ? 'npcs' : 'characters';
+        db.prepare(`UPDATE ${table} SET map_id = ?, x = ?, y = ? WHERE id = ?`).run(target.id, ax, ay, id);
+        setMoveFlag(kind, id, true);
+        if (kind === 'character') {
+          refreshFogFor(parseChar(db.prepare('SELECT * FROM characters WHERE id = ?').get(id)));
+          revealWorldFor(id, target, fromMap);
+        }
       });
       setConfig('world_travel', null);
       setConfig('active_map_id', target.id); // …then the city appears
@@ -842,13 +852,15 @@ dmRouter.post('/move-tokens', (req, res) => {
       // draw the road (they stay at the door until it starts).
       if (target && door.world_travel) {
         const world = worldMap();
-        const charIds = moves.filter((m) => m.kind !== 'monster' && m.kind !== 'npc').map((m) => Number(m.id));
+        const charIds = moves.filter((m) => m.kind === 'character').map((m) => Number(m.id));
+        // NPCs in the selection (companions, escorts) make the trip too.
+        const npcIds = moves.filter((m) => m.kind === 'npc').map((m) => Number(m.id));
         if (world && sourceMap?.world_x != null && target.world_x != null && charIds.length) {
           return ok(res, {
             blocked: [],
             journeyPlan: {
               worldId: world.id, fromMapId: sourceMap.id, toMapId: target.id,
-              arriveX: door.target_x, arriveY: door.target_y, charIds,
+              arriveX: door.target_x, arriveY: door.target_y, charIds, npcIds,
             },
           });
         }

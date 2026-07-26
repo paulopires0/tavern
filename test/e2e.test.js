@@ -929,6 +929,30 @@ test('e2e', async (t) => {
     const push = await tv.latest('state:map');
     assert.equal(push.fogGrid['31,6'], 2, 'the detour corner is revealed, not just the straight line');
   });
+
+  await t.test('an escorting NPC joins the party on a kingdom journey', async () => {
+    // hero + a companion NPC on mapA, dropped together on the flagged door
+    await api('POST', '/api/dm/move-token', { kind: 'character', id: hero, mapId: mapA, x: 100, y: 120 });
+    const npc = (await api('POST', '/api/dm/npcs', { name: 'Companion', map_id: mapA, x: 120, y: 120 })).id;
+    const plan = await api('POST', '/api/dm/move-tokens', {
+      anchor: { mapId: mapA, x: 510, y: 505 },
+      moves: [
+        { kind: 'character', id: hero, mapId: mapA, x: 510, y: 505 },
+        { kind: 'npc', id: npc, mapId: mapA, x: 512, y: 505 },
+      ],
+    });
+    assert.ok(plan.journeyPlan, 'the flagged door hands back a plan for the group');
+    assert.deepEqual(plan.journeyPlan.charIds, [hero]);
+    assert.deepEqual(plan.journeyPlan.npcIds, [npc], 'the NPC is part of the trip, not left behind');
+
+    // run the journey with a fast (short) road and wait for the arrival timer
+    const run = await api('POST', '/api/dm/world-journey', { ...plan.journeyPlan, path: [] });
+    assert.equal(run.ok, true);
+    await new Promise((r) => setTimeout(r, run.durationMs + 1200));
+    const arrived = await connectAsDmMap(mapB);
+    assert.ok(arrived.npcs.some((n) => n.id === npc && n.map_id === mapB), 'the NPC arrived with the party');
+    await api('DELETE', `/api/dm/npcs/${npc}`);
+  });
 });
 
 // Helper: fetch the DM's map detail via a throwaway socket.

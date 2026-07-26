@@ -124,11 +124,27 @@ export default function MapCanvas({
     return () => ro.disconnect();
   }, []);
 
-  // Fit the map (or, for kingdom/dungeon maps, the explored frameBox) whenever
-  // the map itself changes.
+  // Fit the map (or, for kingdom/dungeon maps, the explored frameBox) when the
+  // MAP changes. A container RESIZE (fullscreen toggled, window dragged) must
+  // NOT re-fit — that would throw away wherever the viewer had zoomed/panned to.
+  // Instead the view is preserved: same centre, same zoom, only the visible
+  // width/height re-derived for the new box (so nothing stretches).
+  const fitRef = useRef({ id: null, w: 0, h: 0 });
   useEffect(() => {
     if (!map) return;
-    fitView();
+    const prev = fitRef.current;
+    if (prev.id !== map.id) {
+      fitView(); // a different map: frame it fresh
+    } else if (prev.w && (prev.w !== size.w || prev.h !== size.h)) {
+      setVb((v) => {
+        if (!v) return v;
+        const cx = v.x + v.w / 2, cy = v.y + v.h / 2; // hold the centre
+        const scale = prev.w / v.w;                   // screen px per image px (the zoom)
+        const w = size.w / scale, h = size.h / scale; // same zoom, new box
+        return { x: cx - w / 2, y: cy - h / 2, w, h };
+      });
+    }
+    fitRef.current = { id: map.id, w: size.w, h: size.h };
   }, [map?.id, size.w, size.h]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Grow-only reframe: when the explored area (frameBox) pushes past the current
