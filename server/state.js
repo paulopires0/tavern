@@ -27,6 +27,18 @@ export function getIO() { return io; }
 // client — otherwise re-showing the kingdom map replays the whole trip (and it
 // would replay again on every revisit). Filtering here means even a browser
 // running an older bundle can't animate a finished journey.
+// A soundboard hit is a ONE-SHOT. It lives in config so every connected screen
+// sees the same nonce, but it belongs to the instant it was fired: a cue left
+// over from earlier (or from a previous session) must never reach a TV that
+// connects — or unmutes — later, or the speakers blast a sound nobody asked
+// for. Same rule as the kingdom-journey cue below.
+const SFX_FRESH_MS = 5000;
+function liveSfx() {
+  const cue = getConfig('sfx', null);
+  if (!cue?.nonce || !cue.url) return null;
+  return Date.now() - cue.nonce < SFX_FRESH_MS ? cue : null;
+}
+
 function liveWorldTravel() {
   const cue = getConfig('world_travel', null);
   if (!cue?.nonce || !Array.isArray(cue.path) || cue.path.length < 2) return null;
@@ -100,7 +112,7 @@ function tvGlobal() {
     role: 'tv',
     activeMapId: getConfig('active_map_id', null),
     tvOverlay: getConfig('tv_overlay', null),
-    sfx: getConfig('sfx', null), // {url, name, nonce} — TV plays it once per nonce
+    sfx: liveSfx(), // {url, name, nonce} — only while it is still the moment it was fired
     worldTravel: liveWorldTravel(), // {path, nonce, durationMs} — only while it is running
     music: musicState(), // TV is the audio output device, audio only (README)
   };

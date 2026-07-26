@@ -3,6 +3,7 @@ import { connectSocket } from './socket.js';
 import MapCanvas from './MapCanvas.jsx';
 import YouTubePlayer from './YouTubePlayer.jsx';
 import { journeyIsLive } from './journey.js';
+import { sfxIsLive } from './sfx.js';
 
 // Kingdom & dungeon maps FRAME only what the party has revealed (fog cells that
 // are seen/observed, plus the party's own tokens). Returned in image px, or
@@ -103,10 +104,16 @@ export default function TVView({ tvKey }) {
     return () => s.close();
   }, [tvKey]);
 
-  // Fire soundboard sounds once per nonce.
+  // Fire soundboard sounds once per nonce — and only sounds fired WHILE this
+  // screen was listening. A cue that arrives muted, or one already sitting in
+  // the config when we connect, is marked consumed without playing: otherwise
+  // tapping "enable sound" would blast out whatever the DM last played, which
+  // is never what anyone wants from a speaker in a room full of people.
   const sfx = global?.sfx;
   useEffect(() => {
-    if (!audioReady || !sfx?.nonce || sfx.nonce === lastSfxNonce.current) return;
+    if (!sfx?.nonce) return;
+    if (!audioReady || !sfxIsLive(sfx)) { lastSfxNonce.current = sfx.nonce; return; }
+    if (sfx.nonce === lastSfxNonce.current) return;
     lastSfxNonce.current = sfx.nonce;
     const el = sfxRef.current;
     if (el) {

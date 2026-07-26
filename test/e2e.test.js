@@ -840,6 +840,13 @@ test('e2e', async (t) => {
     st = await tv.latest('state');
     assert.equal(st.sfx.url, '/uploads/music/x.wav');
     assert.ok(st.sfx.nonce > 0);
+
+    // A cue is a one-shot: once it is history the server stops sending it, so a
+    // TV that connects (or unmutes) later never blasts an old sound.
+    setConfig('sfx', { url: '/uploads/music/x.wav', name: 'Thunder', nonce: Date.now() - 60000 });
+    const late = await connectSocket({ tvKey: getConfig('spectator_key') });
+    cleanup.push(late);
+    assert.equal((await late.next('state')).sfx, null, 'a stale soundboard cue is withheld');
   });
 
   await t.test('settings: custom DM password, default vision, TV link regen', async () => {
