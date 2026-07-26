@@ -8,6 +8,14 @@ import { CropInput } from '../ImageCropper.jsx';
 export default function NPCs({ global, act }) {
   const [newName, setNewName] = useState('');
   const [open, setOpen] = useState(null);
+  const [query, setQuery] = useState('');
+
+  const q = query.trim().toLowerCase();
+  const npcs = q
+    ? global.npcs.filter((n) => n.name.toLowerCase().includes(q)
+      || (n.description || '').toLowerCase().includes(q)
+      || (n.notes || '').toLowerCase().includes(q))
+    : global.npcs;
 
   return (
     <div className="panel">
@@ -21,8 +29,13 @@ export default function NPCs({ global, act }) {
           <button onClick={() => act('DELETE', '/api/dm/tv-overlay')}>Hide TV image</button>
         )}
       </div>
+      <div className="row" style={{ marginTop: 8 }}>
+        <input className="grow" placeholder="Search NPCs by name, description or notes…"
+          value={query} onChange={(e) => setQuery(e.target.value)} />
+        {query && <button className="mini" onClick={() => setQuery('')}>clear</button>}
+      </div>
 
-      {global.npcs.map((n) => (
+      {npcs.map((n) => (
         <div className="card" key={n.id}>
           <header className="row spread clickable" onClick={() => setOpen(open === n.id ? null : n.id)}>
             <span className="row">
@@ -73,7 +86,9 @@ export default function NPCs({ global, act }) {
           )}
         </div>
       ))}
-      {global.npcs.length === 0 && <p className="muted pad">No NPCs yet.</p>}
+      {npcs.length === 0 && (
+        <p className="muted pad">{global.npcs.length ? 'No NPCs match your search.' : 'No NPCs yet.'}</p>
+      )}
     </div>
   );
 }

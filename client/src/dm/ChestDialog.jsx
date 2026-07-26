@@ -15,6 +15,7 @@ export default function ChestDialog({ chestId, characterId, characters, items = 
 
   // add-from-pool
   const [pick, setPick] = useState('');
+  const [pickQuery, setPickQuery] = useState('');
   const [qty, setQty] = useState(1);
   // create-a-new-item
   const emptyItem = { name: '', category: 'item', measure: 'unit', weight: 0, value: 0, damage: '', range: 0, armor: 0, description: '' };
@@ -34,13 +35,19 @@ export default function ChestDialog({ chestId, characterId, characters, items = 
     onClose();
   }
 
-  // The pool, newest-relevant first, grouped by category for the picker.
+  // The pool, filtered by the search box, grouped by category for the picker.
   const byCategory = useMemo(() => {
+    const q = pickQuery.trim().toLowerCase();
+    const pool = q
+      ? items.filter((it) => it.name.toLowerCase().includes(q)
+        || (it.category || '').toLowerCase().includes(q)
+        || (it.tags || []).some((t) => String(t).toLowerCase().includes(q)))
+      : items;
     const groups = {};
-    for (const it of items) (groups[it.category] ||= []).push(it);
+    for (const it of pool) (groups[it.category] ||= []).push(it);
     for (const list of Object.values(groups)) list.sort((a, b) => a.name.localeCompare(b.name));
     return groups;
-  }, [items]);
+  }, [items, pickQuery]);
 
   if (!data) return null;
   const { chest, entries } = data;
@@ -138,6 +145,8 @@ export default function ChestDialog({ chestId, characterId, characters, items = 
 
         {/* Put items in: pick from the pool, or create a new one on the spot */}
         <div className="chest-add">
+          <input className="grow" placeholder="Search the item pool…" value={pickQuery}
+            onChange={(e) => setPickQuery(e.target.value)} style={{ marginBottom: 6 }} />
           <div className="row">
             <select className="grow" value={pick} onChange={(e) => setPick(e.target.value)}>
               <option value="">— add an existing item —</option>

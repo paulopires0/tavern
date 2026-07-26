@@ -45,16 +45,33 @@ export function TextArea({ value, onSave, rows = 4, placeholder }) {
 }
 
 export function GiveItem({ items, onGive, label = 'Add item' }) {
+  const [q, setQ] = useState('');
   const [itemId, setItemId] = useState(items[0]?.id);
   const [qty, setQty] = useState(1);
   if (!items.length) return <p className="muted small">No items defined yet.</p>;
+  const ql = q.trim().toLowerCase();
+  const matches = ql
+    ? items.filter((i) => i.name.toLowerCase().includes(ql)
+      || (i.category || '').toLowerCase().includes(ql)
+      || (i.tags || []).some((t) => String(t).toLowerCase().includes(ql)))
+    : items;
+  // as the filter narrows, keep a valid selection (fall back to the first match)
+  const sel = matches.some((i) => i.id === itemId) ? itemId : matches[0]?.id;
   return (
-    <div className="row">
-      <select value={itemId} onChange={(e) => setItemId(Number(e.target.value))}>
-        {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-      </select>
-      <input type="number" className="num" min="1" value={qty} onChange={(e) => setQty(Number(e.target.value))} />
-      <button onClick={() => onGive(Number(itemId), qty)}>{label}</button>
+    <div className="give-item">
+      <input placeholder="Search items by name, type or tag…" value={q}
+        onChange={(e) => setQ(e.target.value)} />
+      <div className="row">
+        <select value={sel ?? ''} onChange={(e) => setItemId(Number(e.target.value))}>
+          {matches.map((i) => (
+            <option key={i.id} value={i.id}>{i.name}{i.category ? ` · ${i.category}` : ''}</option>
+          ))}
+          {!matches.length && <option value="">— no match —</option>}
+        </select>
+        <input type="number" className="num" min="1" value={qty}
+          onChange={(e) => setQty(Number(e.target.value))} />
+        <button disabled={!sel} onClick={() => sel && onGive(Number(sel), qty)}>{label}</button>
+      </div>
     </div>
   );
 }

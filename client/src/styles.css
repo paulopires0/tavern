@@ -275,6 +275,10 @@ code { background: #0008; padding: 2px 6px; border-radius: 6px; }
 .checklist-list > li:first-child { border-top: none; }
 .checklist-list ul { margin: 2px 0 0; padding-left: 16px; }
 
+/* searchable item picker */
+.give-item { display: flex; flex-direction: column; gap: 6px; }
+.give-item > input:first-child { width: 100%; }
+
 .side-panel {
   width: 330px; min-width: 330px; overflow-y: auto; padding: 12px;
   background: var(--bg2); border-left: 1px solid var(--border-strong);

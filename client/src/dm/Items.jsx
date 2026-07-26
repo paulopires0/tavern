@@ -15,10 +15,15 @@ export default function Items({ global, act }) {
   const [form, setForm] = useState(empty);
   const [open, setOpen] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
   const [preview, setPreview] = useState(null);
 
   const f = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-  const items = global.items.filter((i) => filter === 'all' || i.category === filter);
+  const q = query.trim().toLowerCase();
+  const items = global.items.filter((i) => (filter === 'all' || i.category === filter)
+    && (!q || i.name.toLowerCase().includes(q)
+      || (i.description || '').toLowerCase().includes(q)
+      || (i.tags || []).some((t) => String(t).toLowerCase().includes(q))));
 
   return (
     <div className="panel">
@@ -116,6 +121,11 @@ export default function Items({ global, act }) {
         </div>
       </div>
 
+      <div className="row" style={{ marginTop: 8 }}>
+        <input className="grow" placeholder="Search items by name, description or tag…"
+          value={query} onChange={(e) => setQuery(e.target.value)} />
+        {query && <button className="mini" onClick={() => setQuery('')}>clear</button>}
+      </div>
       <div className="chips">
         {['all', ...CATEGORIES].map((c) => (
           <button key={c} className={`chip ${filter === c ? 'active' : ''}`} onClick={() => setFilter(c)}>
